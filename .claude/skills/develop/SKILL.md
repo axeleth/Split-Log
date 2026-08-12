@@ -178,6 +178,27 @@ the fix would need a decision the user should own — stop and report the failur
 with what you tried. A blocked loop is worth surfacing; a silently loosened test
 is not.
 
+### When a bug is worth writing down
+
+There is no bug log in this repo, deliberately. A fixed bug leaves three
+records already: the test that now guards it, the commit that explains it, and
+`git log` if anyone needs the history. A prose log of everything ever fixed goes
+stale and stops being read, which is worse than not having one.
+
+The exception is a bug whose **fix does not explain itself**. If the code now
+looks odd, redundant, or gratuitously defensive, the next person to read it will
+tidy it away and reintroduce the bug — and a test will catch that only after
+they have done the work. Those go in the **Known gotchas** list in `CLAUDE.md`,
+as a short "don't do this, here's what broke" entry.
+
+Gotcha #3 there is the pattern: `switchView('plan')` calling `closePlanDetail()`
+reads like a pointless extra call, so the note exists to stop someone deleting
+it.
+
+Rule of thumb: if the test alone would leave the next reader puzzled about *why*
+the code is shaped that way, add the gotcha. Otherwise the test and the commit
+message are enough — do not narrate routine fixes into a document nobody reads.
+
 ## 8. Hand over a site they can click
 
 **Only once `npm run verify` is fully green.** Tests prove the logic; they do
