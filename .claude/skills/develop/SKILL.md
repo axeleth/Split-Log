@@ -13,12 +13,18 @@ cannot quietly break.
 The shape of a run:
 
 ```
-plan  ->  ask  ->  approve  ->  build  ->  test  ->  click around  ->  hand over
+                            ┌──────────┐
+                            ▼          │ still failing
+plan -> ask -> approve -> build -> verify -> click around -> hand over
+                                       │
+                                    all green
 ```
 
-Nothing is written until the plan is approved, and nothing is merged until the
-user asks. Work in the order below, and do not skip the test step because a
-change looks trivial: an untested feature is one nobody will notice breaking.
+Nothing is written until the plan is approved. Nothing is demoed until the whole
+suite passes. Nothing is merged until the user asks.
+
+Work in the order below, and do not skip the test step because a change looks
+trivial: an untested feature is one nobody will notice breaking.
 
 ## 1. Plan before touching anything
 
@@ -130,7 +136,7 @@ Write at least one test that **fails before the feature exists**. A test that
 passes against the old code is testing nothing. Verify this by stashing the
 change, running the test, and seeing it fail.
 
-## 7. Verify
+## 7. Verify — loop until everything passes
 
 ```bash
 npm run verify        # jsdom suites, then the real-HTTP serve check
@@ -141,15 +147,42 @@ npm run verify        # jsdom suites, then the real-HTTP serve check
 scripts are served as JavaScript, and `storage-shim.js` is loaded before
 `app.js` — things jsdom cannot catch because it never makes a request.
 
-Both must pass. If a **pre-existing** test fails, that is a regression from your
-change: fix the change, not the test. Only edit an existing test when the
-feature deliberately changes the behaviour it asserts, and say so explicitly
-when you report back.
+**Run it, fix what fails, run it again. Repeat until the whole suite is green.**
+A single failing check means the feature is not finished — do not move on to the
+demo, and do not report the work as done with a caveat attached. `npm run
+verify` exiting 0 is the gate.
+
+Each time round the loop:
+
+1. Read the actual failure. The suites print a `FAIL` line naming the assertion;
+   `test/run-all.js` lists which suites failed at the end.
+2. Work out whether the **code** or the **test** is wrong. Default to the code
+   being wrong. A test that fails is doing its job.
+3. Fix it, then re-run the **full** `npm run verify`, not just the suite you
+   touched — fixing one thing frequently breaks another, and only the full run
+   proves otherwise.
+
+Rules that hold however many times round you go:
+
+- A **pre-existing** test failing is a regression from your change. Fix the
+  change, not the test.
+- Only edit an existing test when the feature deliberately changes the behaviour
+  it asserts — and say so explicitly when you report back, since that is a
+  change to the contract, not a fix.
+- Never weaken an assertion, delete a test, or skip a suite to get to green.
+  That is not passing; it is removing the thing that would have told you.
+- If a test looks wrong, say why before changing it.
+
+If you get genuinely stuck — the same failure survives a few real attempts, or
+the fix would need a decision the user should own — stop and report the failure
+with what you tried. A blocked loop is worth surfacing; a silently loosened test
+is not.
 
 ## 8. Hand over a site they can click
 
-Tests prove the logic; they do not show whether the thing feels right. Finish by
-serving the worktree so the user can actually use it.
+**Only once `npm run verify` is fully green.** Tests prove the logic; they do
+not show whether the thing feels right. Finish by serving the worktree so the
+user can actually use it.
 
 Start the server **in the background from inside the worktree**, so the page
 they load is the new version and not their working copy:
@@ -187,7 +220,9 @@ Commit inside the worktree, then report:
 
 - what changed, and which files
 - the new tests and what they cover
-- the full verify output
+- confirmation that `npm run verify` is green, with the suite count
+- if it took more than one pass, what failed on the way and what fixed it —
+  that is the useful part, not noise to tidy away
 - the local URL from step 8
 - anything deliberately left out
 
