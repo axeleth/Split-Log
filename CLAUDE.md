@@ -179,12 +179,40 @@ rather than introducing new colors/fonts ad hoc.
 
 ## Testing
 
-`npm test` runs `test/smoke.js` — a jsdom harness (no test framework)
-that drives the real `index.html` end to end: init, quick-log, plan
-generation, ledger editing, tab switching, the two-step archive delete,
-settings flows, and a second page load to confirm data round-trips
-through storage. It also asserts the CSS/JS actually load and that every
-class the templates reference exists in `styles.css`.
+```bash
+npm test            # every suite in test/ (auto-discovered)
+npm run verify      # npm test, then the real-HTTP serve check
+npm run test:serve  # serve locally and check over HTTP
+```
+
+`test/run-all.js` **discovers** every `*.js` in `test/` and runs each in its
+own process, so a new suite needs no registration anywhere — drop the file
+in and it runs. It exits non-zero if any suite does. This is deliberate:
+a test that must be manually registered is one that eventually gets
+forgotten, and the point of the suite is that a later feature cannot
+silently break an earlier one.
+
+`test/serve-check.sh` covers what jsdom structurally cannot — it boots
+`python3 -m http.server` and checks over real HTTP that every asset is
+reachable, that scripts are served with a JavaScript content type, and
+that `storage-shim.js` is loaded before `app.js`. Missing files, wrong
+paths and MIME problems show up here, never in jsdom.
+
+Current suites:
+
+- `test/smoke.js` — drives the real `index.html` end to end in jsdom
+  against a mocked `window.storage`: init, quick-log, plan generation,
+  ledger editing, tab switching, the two-step archive delete, settings
+  flows, and a second page load to confirm data round-trips. It also
+  asserts the CSS/JS load and that every class the templates reference
+  exists in `styles.css`.
+- `test/storage-shim.js` — drives the real `storage-shim.js` against a
+  real `localStorage`: the `get -> {value}|null` / `set -> truthy`
+  contract, key namespacing, a reload round-trip, and that an existing
+  `window.storage` is left untouched.
+
+Use `/develop` to add a feature: it builds in a git worktree and requires
+a test that fails before the feature exists.
 
 Two things the harness has to work around, both jsdom limitations rather
 than app issues:

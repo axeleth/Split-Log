@@ -4,9 +4,11 @@
   "private": true,
   "description": "Split Log — running training tracker (static single-page dashboard)",
   "scripts": {
-    "test": "node test/smoke.js && node test/storage-shim.js",
+    "test": "node test/run-all.js",
     "test:smoke": "node test/smoke.js",
     "test:shim": "node test/storage-shim.js",
+    "test:serve": "./test/serve-check.sh",
+    "verify": "npm test && npm run test:serve",
     "serve": "python3 -m http.server 8080"
   },
   "devDependencies": {
