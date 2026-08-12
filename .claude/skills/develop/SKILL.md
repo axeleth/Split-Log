@@ -221,16 +221,47 @@ python3 -m http.server 8081
 ```
 
 Confirm it actually answers before handing over the link — `curl -s -o /dev/null
--w '%{http_code}' http://127.0.0.1:8080/` should be 200. Then tell them:
+-w '%{http_code}' http://127.0.0.1:8080/` should be 200.
+
+### Seed the state the feature needs — do not make them set it up
+
+Storage is per-origin, so `localhost:8080` starts **empty**: no plans, no logged
+runs, default settings. Handing over a bare app and expecting the user to
+generate a plan, open a ledger and log a run before they can reach the thing
+they asked for wastes their time and tests the wrong surface.
+
+**Put the app in the state where the new feature is one click away**, then say
+so. The rule:
+
+- **The feature is reached from inside a plan** (ledger rows, the day editor,
+  plan detail, archive) → seed a **generated plan**, and log a run or two into
+  it if the feature involves logged data.
+- **The feature *is* plan creation** (the generators, the date inputs,
+  first-run/empty-state behaviour) → seed **nothing**. An empty app is the state
+  under test, and pre-filling it would hide the thing they need to see.
+- **Anything else** (settings, trends, Today) → seed whatever that surface needs
+  to be non-empty. Trends with no runs is three blank charts and proves nothing.
+
+Seed by driving the real app in the browser, not by hand-writing JSON into
+`localStorage`: click `#btnGen5k` / `#btnGen10k`, fill the quick-log and click
+`#btnLog`. Going through the app's own code paths means the seeded data is valid
+by construction and matches whatever the schema is that day; writing storage
+directly risks demoing a shape the app would never produce.
+
+Pick dates around the real today so the plan straddles past and future — derive
+them from today, never hardcode, or the ledger opens on a block that is entirely
+in the past.
+
+Then tell them:
 
 - **the URL**, e.g. http://127.0.0.1:8080/
-- **what to click** to exercise the new feature, in order
+- **what is already set up** — "a 5K plan to 31 Aug, with two runs logged"
+- **what to click** to exercise the new feature, in order, starting from that
+  seeded state
 - **what they should see** if it works
 - that it is served from the worktree, so their own checkout is untouched
-
-Storage is per-origin, so `localhost:8080` has its own `splitlog:` data,
-separate from the deployed site. Say so if the feature involves saved data —
-their real runs will not be there, and that is expected rather than a bug.
+- that this origin has its own `splitlog:` data, so their **real runs are not
+  here and the seeded ones are throwaway** — expected, not a bug
 
 Leave the server running while they look. Stop it when they are done, or when
 the work is merged or abandoned.
