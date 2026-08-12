@@ -184,6 +184,17 @@ async function saveSettings(){
   catch(e){ showToast('Save failed — try again'); }
 }
 
+// A redraw failing AFTER a successful write must never be reported as a save
+// failure: the run is already stored, and saying otherwise invites the user to
+// re-enter data they have not lost. Keep the write and the repaint in separate
+// failure domains — this wraps the repaint half. The full error (with stack)
+// goes to the console, named by stage, so the real fault stays diagnosable
+// instead of being flattened into a toast message.
+function safeRender(stage, fn){
+  try{ fn(); }
+  catch(err){ console.error('[Split Log] Redraw failed after save ('+stage+'):', err); }
+}
+
 /* --------------------------------------------------------------------------
    5. Plan generators — pure, return a new plan object without touching state
    -------------------------------------------------------------------------- */
@@ -460,16 +471,19 @@ function attachQuickLog(date){
 
       const ok = await window.storage.set('plans', JSON.stringify(PLANS));
       if(!ok) throw new Error('storage.set returned no result');
-
-      showToast('Run logged');
-      renderToday();
-      renderPlanList();
-      try{ renderCharts(); }catch(chartErr){ console.error('Chart render failed (log still saved):', chartErr); }
     }catch(err){
+      // Only a genuine persistence failure reaches here.
       console.error('Failed to log run:', err);
       showToast('Could not save — '+(err.message||'try again'));
       if(btn) btn.disabled = false;
+      return;
     }
+
+    // Saved. Nothing below can change that, so nothing below may report failure.
+    safeRender('today', renderToday);
+    safeRender('planList', renderPlanList);
+    safeRender('charts', renderCharts);
+    showToast('Run logged');
   });
 }
 
@@ -835,14 +849,19 @@ function attachEditor(planId, date){
       };
       const ok = await window.storage.set('plans', JSON.stringify(PLANS));
       if(!ok) throw new Error('storage.set returned no result');
-      showToast('Saved');
-      renderPlanLedger(planId); renderToday();
-      try{ renderCharts(); }catch(chartErr){ console.error('Chart render failed (save still succeeded):', chartErr); }
     }catch(err){
+      // Only a genuine persistence failure reaches here.
       console.error('Failed to save day:', err);
       showToast('Could not save — '+(err.message||'try again'));
-      btn.disabled = false;
+      if(btn) btn.disabled = false;
+      return;
     }
+
+    // Saved. Nothing below can change that, so nothing below may report failure.
+    safeRender('planLedger', ()=> renderPlanLedger(planId));
+    safeRender('today', renderToday);
+    safeRender('charts', renderCharts);
+    showToast('Saved');
   });
   // Re-render only the button row, so arming or cancelling the confirm cannot
   // discard whatever is typed in the editor's fields. Rebuilding the whole
@@ -880,10 +899,12 @@ function attachEditor(planId, date){
         if(btn) btn.disabled = false;
         return;
       }
+      // Written. Nothing below can undo that, so nothing below may report failure.
       delete dayDeleteStage[date];
       showToast('Day removed');
-      renderPlanLedger(planId); renderToday();
-      try{ renderCharts(); }catch(chartErr){ console.error('Chart render failed (delete still succeeded):', chartErr); }
+      safeRender('planLedger', ()=> renderPlanLedger(planId));
+      safeRender('today', renderToday);
+      safeRender('charts', renderCharts);
     });
 
     // Clearing keeps the planned session (type, title, detail, target pace)
@@ -907,9 +928,11 @@ function attachEditor(planId, date){
         if(btn) btn.disabled = false;
         return;
       }
+      // Written. Nothing below can undo that, so nothing below may report failure.
       showToast('Day cleared');
-      renderPlanLedger(planId); renderToday();
-      try{ renderCharts(); }catch(chartErr){ console.error('Chart render failed (clear still succeeded):', chartErr); }
+      safeRender('planLedger', ()=> renderPlanLedger(planId));
+      safeRender('today', renderToday);
+      safeRender('charts', renderCharts);
     });
   }
 
