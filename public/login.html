@@ -1,0 +1,183 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>Split Log — sign in</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=IBM+Plex+Mono:wght@400;500;600&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+/* Tokens are lifted verbatim from styles.css so the gate reads as the same
+   product rather than a separate door bolted onto it. Kept inline: this page is
+   served on its own with status 401, and a 401 body that has to fetch a
+   stylesheet would flash unstyled while the gate is exactly what should look
+   deliberate. */
+:root{
+  --bg:#101c17;
+  --surface:#182821;
+  --surface-2:#1f342b;
+  --border:#2c4036;
+  --text:#eaf1ec;
+  --text-muted:#8ea79b;
+  --z2:#c9e86a;
+  --hard:#ff6d47;
+  --gold:#e7b84e;
+
+  --font-display:'Bebas Neue',sans-serif;
+  --font-mono:'IBM Plex Mono',monospace;
+  --font-body:'Inter',sans-serif;
+}
+
+*{box-sizing:border-box;}
+html,body{height:100%;}
+body{margin:0;background:var(--bg);color:var(--text);font-family:var(--font-body);
+  line-height:1.5;-webkit-font-smoothing:antialiased;
+  display:flex;align-items:center;justify-content:center;padding:24px;}
+
+.card{width:100%;max-width:24rem;display:flex;flex-direction:column;gap:24px;}
+
+/* The masthead mirrors the app's own — display face, mono kicker, 2px rule. */
+header{display:flex;flex-direction:column;gap:6px;
+  border-bottom:2px solid var(--border);padding-bottom:14px;}
+h1{margin:0;font-family:var(--font-display);font-size:44px;letter-spacing:1.5px;
+  line-height:1;}
+.sub{margin:0;font-family:var(--font-mono);font-size:11px;color:var(--text-muted);
+  letter-spacing:1px;text-transform:uppercase;}
+
+/* Five ticks for the five HR zones, lit in sequence — the app's subject used as
+   a quiet mark. Colour runs easy -> hard, matching the zone palette. */
+.zones{display:flex;gap:3px;margin-top:8px;}
+.zones i{height:5px;flex:1;border-radius:1px;background:var(--border);
+  display:block;transition:background .5s ease;}
+.zones i.on:nth-child(1){background:var(--rest,#5c7268);}
+.zones i.on:nth-child(2){background:var(--z2);}
+.zones i.on:nth-child(3){background:var(--gold);}
+.zones i.on:nth-child(4){background:var(--hard);}
+.zones i.on:nth-child(5){background:var(--hard);}
+
+form{display:flex;flex-direction:column;gap:10px;}
+label{font-family:var(--font-mono);font-size:11px;letter-spacing:1px;
+  text-transform:uppercase;color:var(--text-muted);}
+.field{display:flex;gap:8px;}
+input[type=password]{flex:1;min-width:0;padding:11px 12px;background:var(--surface);
+  color:var(--text);border:1px solid var(--border);border-radius:3px;
+  font-family:var(--font-mono);font-size:15px;letter-spacing:1px;}
+input[type=password]:focus{outline:2px solid var(--z2);outline-offset:1px;
+  border-color:var(--z2);}
+button{padding:11px 18px;background:var(--z2);color:var(--bg);border:0;
+  border-radius:3px;font-family:var(--font-mono);font-size:12px;font-weight:600;
+  letter-spacing:1px;text-transform:uppercase;cursor:pointer;
+  transition:opacity .15s ease;}
+button:hover{opacity:.85;}
+button:focus-visible{outline:2px solid var(--text);outline-offset:2px;}
+button:disabled{opacity:.45;cursor:default;}
+
+.msg{min-height:1.1rem;font-family:var(--font-mono);font-size:12px;color:var(--hard);
+  margin:0;}
+.msg.ok{color:var(--text-muted);}
+footer{font-family:var(--font-mono);font-size:11px;color:var(--text-muted);
+  line-height:1.7;}
+
+@media (prefers-reduced-motion:reduce){.zones i{transition:none;}}
+</style>
+</head>
+<body>
+<main class="card">
+  <header>
+    <h1>SPLIT LOG</h1>
+    <p class="sub">Training tracker &middot; private</p>
+    <div class="zones" aria-hidden="true">
+      <i></i><i></i><i></i><i></i><i></i>
+    </div>
+  </header>
+
+  <form id="f" autocomplete="on">
+    <label for="pw">Password</label>
+    <div class="field">
+      <input id="pw" name="password" type="password" required autofocus
+             autocomplete="current-password" spellcheck="false"
+             aria-describedby="msg">
+      <button id="go" type="submit">Enter</button>
+    </div>
+    <p class="msg" id="msg" role="status" aria-live="polite"></p>
+  </form>
+
+  <footer>
+    Personal training data.<br>
+    Not indexed, not shared.
+  </footer>
+</main>
+
+<script>
+// The gate is enforced by Caddy: it only serves the app when the `splitlog`
+// cookie carries the shared secret. This page's job is to set that cookie and
+// confirm it worked, so a wrong password is reported here rather than by a
+// browser dialog.
+(function () {
+  var f = document.getElementById('f');
+  var pw = document.getElementById('pw');
+  var msg = document.getElementById('msg');
+  var go = document.getElementById('go');
+  var ticks = Array.prototype.slice.call(document.querySelectorAll('.zones i'));
+
+  // Light the five zone ticks in sequence on load.
+  ticks.forEach(function (t, i) {
+    setTimeout(function () { t.classList.add('on'); }, 90 + i * 70);
+  });
+
+  var params = new URLSearchParams(location.search);
+  if (params.get('e') === '1') {
+    msg.textContent = 'Incorrect password — try again.';
+  } else if (params.get('out') === '1') {
+    // Arrived here from a Log out action. Clear the cookie again in case the
+    // click raced the navigation, and confirm rather than leaving a bare form
+    // that could read as a failed login.
+    document.cookie = 'splitlog=; path=/; max-age=0; secure; samesite=strict';
+    msg.className = 'msg ok';
+    msg.textContent = 'Signed out.';
+  }
+
+  // Any keystroke clears a stale status line.
+  pw.addEventListener('input', function () {
+    if (msg.textContent) { msg.textContent = ''; msg.className = 'msg'; }
+  });
+
+  f.addEventListener('submit', function (ev) {
+    ev.preventDefault();
+    var v = pw.value;
+    if (!v) return;
+
+    msg.textContent = '';
+    go.disabled = true;
+
+    // 12h cookie. Secure + SameSite so it is only ever sent back over HTTPS to
+    // this site.
+    document.cookie = 'splitlog=' + encodeURIComponent(v) +
+      '; path=/; max-age=43200; secure; samesite=strict';
+
+    // Ask for the app. Caddy answers 401 if the cookie is wrong, so the password
+    // is checked server-side and never validated in the browser.
+    fetch('/', { credentials: 'same-origin', cache: 'no-store' })
+      .then(function (r) {
+        if (r.ok) {
+          location.href = '/';
+        } else {
+          document.cookie = 'splitlog=; path=/; max-age=0; secure; samesite=strict';
+          msg.className = 'msg';
+          msg.textContent = 'Incorrect password — try again.';
+          go.disabled = false;
+          pw.value = '';
+          pw.focus();
+        }
+      })
+      .catch(function () {
+        msg.textContent = 'Network error — try again.';
+        go.disabled = false;
+      });
+  });
+})();
+</script>
+</body>
+</html>

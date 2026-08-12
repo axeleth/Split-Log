@@ -1,0 +1,225 @@
+/* ==========================================================================
+   Split Log — Running Training Tracker
+   Dark "race bib / split-timer" theme.
+
+   Section order:
+     1. Design tokens
+     2. Base / reset
+     3. Layout — masthead, tabs, views
+     4. Today — bib hero card
+     5. Controls — buttons, inputs, badges
+     6. Cards & plan generator
+     7. Plan ledger & day editor
+     8. Plan cards & archive
+     9. Trends — charts & VO2max log
+    10. Settings — zone grid
+    11. Toast
+    12. Utilities
+    13. Responsive
+   ========================================================================== */
+
+/* --------------------------------------------------------------------------
+   1. Design tokens
+   -------------------------------------------------------------------------- */
+:root{
+  --bg:#101c17;
+  --surface:#182821;
+  --surface-2:#1f342b;
+  --border:#2c4036;
+  --text:#eaf1ec;
+  --text-muted:#8ea79b;
+  --z2:#c9e86a;
+  --z2-dim:#3a4a2e;
+  --hard:#ff6d47;
+  --hard-dim:#4a2e26;
+  --rest:#5c7268;
+  --rest-dim:#28362f;
+  --gold:#e7b84e;
+  --gold-dim:#4a3c1c;
+
+  --font-display:'Bebas Neue',sans-serif;
+  --font-mono:'IBM Plex Mono',monospace;
+  --font-body:'Inter',sans-serif;
+}
+
+/* --------------------------------------------------------------------------
+   2. Base / reset
+   -------------------------------------------------------------------------- */
+*{box-sizing:border-box;}
+html,body{margin:0;padding:0;background:transparent;color:var(--text);}
+body{font-family:var(--font-body);}
+.app{max-width:920px;margin:0 auto;padding:20px 16px 60px;}
+
+/* --------------------------------------------------------------------------
+   3. Layout — masthead, tabs, views
+   -------------------------------------------------------------------------- */
+.masthead{display:flex;align-items:baseline;justify-content:space-between;border-bottom:2px solid var(--border);padding-bottom:14px;margin-bottom:18px;}
+.masthead h1{font-family:var(--font-display);font-size:36px;letter-spacing:1.5px;margin:0;line-height:1;}
+.masthead .sub{font-family:var(--font-mono);font-size:11px;color:var(--text-muted);letter-spacing:1px;text-transform:uppercase;margin-top:4px;}
+
+.tabs{display:flex;gap:4px;margin-bottom:22px;border-bottom:1px solid var(--border);}
+.tab{font-family:var(--font-mono);font-size:12px;letter-spacing:0.5px;text-transform:uppercase;color:var(--text-muted);background:none;border:none;padding:10px 14px;cursor:pointer;border-bottom:2px solid transparent;transition:color .15s;}
+.tab:hover{color:var(--text);}
+.tab.active{color:var(--z2);border-bottom-color:var(--z2);}
+
+.view{display:none;}
+.view.active{display:block;}
+
+/* --------------------------------------------------------------------------
+   4. Today — bib hero card
+   -------------------------------------------------------------------------- */
+.bib{position:relative;background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:26px 24px;margin-bottom:20px;overflow:hidden;}
+.bib::before{content:"";position:absolute;left:0;right:0;top:0;height:1px;
+  background:repeating-linear-gradient(90deg,var(--border) 0 6px,transparent 6px 12px);}
+.bib-top{display:flex;justify-content:space-between;align-items:flex-start;}
+.bib-date{font-family:var(--font-mono);font-size:12px;color:var(--text-muted);text-transform:uppercase;letter-spacing:1px;}
+.bib-countdown{font-family:var(--font-mono);font-size:12px;color:var(--gold);text-align:right;}
+.bib-type{font-family:var(--font-display);font-size:52px;letter-spacing:1px;margin:6px 0 2px;line-height:1;}
+.bib-type.type-zone2{color:var(--z2);}
+.bib-type.type-hard{color:var(--hard);}
+.bib-type.type-rest{color:var(--rest);}
+.bib-type.type-race{color:var(--gold);}
+.bib-type.type-none{color:var(--text-muted);font-size:30px;}
+.bib-detail{font-size:14px;color:var(--text-muted);max-width:520px;line-height:1.5;margin-bottom:16px;}
+.bib-actions{display:flex;gap:8px;flex-wrap:wrap;}
+
+/* logged metrics strip inside the bib */
+.metrics{display:flex;gap:18px;margin-top:10px;font-family:var(--font-mono);}
+.metric-label{font-size:10px;color:var(--text-muted);text-transform:uppercase;}
+.metric-value{font-size:16px;color:var(--text);}
+.metric-value.accent{color:var(--z2);}
+
+/* --------------------------------------------------------------------------
+   5. Controls — buttons, inputs, badges
+   -------------------------------------------------------------------------- */
+.badge{display:inline-block;font-family:var(--font-mono);font-size:10px;letter-spacing:0.5px;text-transform:uppercase;padding:3px 8px;border-radius:100px;}
+.badge.type-zone2,.badge.status-done{background:var(--z2-dim);color:var(--z2);}
+.badge.type-hard{background:var(--hard-dim);color:var(--hard);}
+.badge.type-rest,.badge.status-skipped{background:var(--rest-dim);color:var(--rest);}
+.badge.type-race{background:var(--gold-dim);color:var(--gold);}
+
+button{font-family:var(--font-body);font-size:13px;font-weight:600;border-radius:7px;border:1px solid var(--border);background:var(--surface-2);color:var(--text);padding:9px 14px;cursor:pointer;transition:background .15s,border-color .15s;}
+button:hover{background:#28392f;}
+button.primary{background:var(--z2);border-color:var(--z2);color:#122015;}
+button.primary:hover{background:#d8f584;}
+button.ghost{background:none;border-color:var(--border);}
+button.small{padding:6px 10px;font-size:12px;}
+button:disabled{opacity:0.4;cursor:default;}
+
+/* destructive confirm buttons in the archive delete flow */
+button.danger{background:var(--hard-dim);border-color:var(--hard);color:var(--hard);}
+button.danger:hover{background:#5c3a2f;}
+button.danger-strong{background:var(--hard);border-color:var(--hard);color:#1a0e0a;}
+button.danger-strong:hover{background:#ff8465;}
+button.icon{padding:2px 8px;}
+
+input,select,textarea{font-family:var(--font-mono);font-size:13px;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:8px 10px;width:100%;}
+input:focus,select:focus,textarea:focus{outline:none;border-color:var(--z2);}
+label{font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;display:block;margin-bottom:5px;font-family:var(--font-mono);}
+.field{margin-bottom:12px;}
+.row{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
+.row3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;}
+
+/* read-only computed pace readout (pace is derived, never typed — see README) */
+.pace-display{font-family:var(--font-mono);font-size:15px;color:var(--z2);padding:4px 0;}
+
+/* --------------------------------------------------------------------------
+   6. Cards & plan generator
+   -------------------------------------------------------------------------- */
+.card{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:18px 20px;margin-bottom:16px;}
+.card h3{font-family:var(--font-display);font-size:20px;letter-spacing:0.5px;margin:0 0 12px;font-weight:400;}
+
+.gen-row{display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;}
+.gen-row .field{margin-bottom:0;min-width:160px;}
+
+/* --------------------------------------------------------------------------
+   7. Plan ledger & day editor
+   -------------------------------------------------------------------------- */
+.week-label{font-family:var(--font-mono);font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:1px;margin:18px 0 8px;padding-top:8px;border-top:1px dashed var(--border);}
+.week-label:first-child{border-top:none;margin-top:0;}
+.day-row{display:flex;align-items:center;gap:12px;padding:10px 12px;border-radius:8px;background:var(--surface);border:1px solid var(--border);margin-bottom:6px;cursor:pointer;transition:border-color .15s;}
+.day-row:hover{border-color:var(--rest);}
+.day-row.done{opacity:0.55;}
+.day-row.today{border-color:var(--z2);}
+.day-date{font-family:var(--font-mono);font-size:12px;color:var(--text-muted);width:64px;flex-shrink:0;}
+.day-dow{opacity:0.6;}
+.day-main{flex:1;min-width:0;}
+.day-title{font-size:14px;font-weight:600;}
+.day-sub{font-size:12px;color:var(--text-muted);margin-top:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.day-status{font-family:var(--font-mono);font-size:10px;text-transform:uppercase;color:var(--text-muted);flex-shrink:0;}
+
+.editor{background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:16px;margin:-2px 0 10px;}
+.editor .close-row{display:flex;justify-content:flex-end;margin-top:10px;gap:8px;}
+
+.empty{color:var(--text-muted);font-size:13px;padding:30px 10px;text-align:center;border:1px dashed var(--border);border-radius:10px;}
+
+/* --------------------------------------------------------------------------
+   8. Plan cards & archive
+   -------------------------------------------------------------------------- */
+.plan-card{display:flex;align-items:center;gap:10px;background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:16px 18px;margin-bottom:10px;cursor:pointer;transition:border-color .15s;}
+.plan-card:hover{border-color:var(--z2);}
+.plan-card-main{flex:1;min-width:0;}
+.plan-card-name{font-family:var(--font-display);font-size:20px;letter-spacing:0.3px;line-height:1.1;}
+.plan-card-range{font-family:var(--font-mono);font-size:11px;color:var(--text-muted);margin-top:3px;}
+.plan-card-progress{font-family:var(--font-mono);font-size:12px;color:var(--text-muted);flex-shrink:0;text-align:right;}
+.plan-card-progress .n{color:var(--z2);font-weight:600;}
+.plan-card-chevron{color:var(--text-muted);font-size:18px;flex-shrink:0;}
+
+.plan-detail-header{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;}
+.plan-detail-title{font-family:var(--font-display);font-size:26px;margin:0 0 4px;}
+.plan-detail-range{font-family:var(--font-mono);font-size:12px;color:var(--text-muted);}
+
+.archive-row{display:flex;align-items:center;gap:10px;background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:14px 16px;margin-bottom:8px;}
+.archive-row .plan-card-main{flex:1;min-width:0;}
+.archive-row .plan-card-name{font-size:17px;opacity:0.85;}
+.archive-row.confirming{border-color:var(--hard);}
+.archive-row .warn{color:var(--hard);}
+
+.panel-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;}
+.panel-head .week-label{margin:0;padding:0;border:none;}
+.back-btn{margin-bottom:14px;}
+
+/* --------------------------------------------------------------------------
+   9. Trends — charts & VO2max log
+   -------------------------------------------------------------------------- */
+.chart-wrap{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:16px 18px;margin-bottom:16px;}
+.chart-wrap h3{font-family:var(--font-display);font-size:18px;font-weight:400;margin:0 0 4px;}
+.chart-wrap .chart-note{font-size:11px;color:var(--text-muted);margin-bottom:10px;font-family:var(--font-mono);}
+canvas{max-height:220px;}
+
+.vo2-log{margin-top:10px;}
+.vo2-log-row{display:flex;justify-content:space-between;align-items:center;gap:10px;font-family:var(--font-mono);font-size:12px;padding:6px 0;border-bottom:1px solid var(--border);}
+.vo2-log-row:last-child{border-bottom:none;}
+
+/* -------------------------------------------------------------------------
+   10. Settings — zone grid
+   -------------------------------------------------------------------------- */
+.zone-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin-top:10px;}
+.zone-cell{background:var(--bg);border:1px solid var(--border);border-radius:7px;padding:8px 6px;text-align:center;}
+.zone-cell .zn{font-family:var(--font-display);font-size:15px;}
+.zone-cell .zr{font-family:var(--font-mono);font-size:10px;color:var(--text-muted);margin-top:2px;}
+.zone-grid .zone-empty{grid-column:1/-1;color:var(--text-muted);font-size:12px;}
+
+/* --------------------------------------------------------------------------
+   11. Toast
+   -------------------------------------------------------------------------- */
+.toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--z2);color:#122015;font-size:12px;font-weight:600;padding:9px 16px;border-radius:100px;opacity:0;pointer-events:none;transition:opacity .25s;font-family:var(--font-mono);letter-spacing:0.3px;z-index:50;}
+.toast.show{opacity:1;}
+
+/* --------------------------------------------------------------------------
+   12. Utilities
+   -------------------------------------------------------------------------- */
+.hint{font-size:12px;color:var(--text-muted);margin-bottom:12px;}
+.hint-after{font-size:12px;color:var(--text-muted);margin-top:10px;}
+.hint-mono{font-size:11px;color:var(--text-muted);margin-bottom:10px;font-family:var(--font-mono);}
+.target-pace{color:var(--gold);}
+.is-hidden{display:none;}
+
+/* --------------------------------------------------------------------------
+   13. Responsive
+   -------------------------------------------------------------------------- */
+@media(max-width:520px){
+  .row,.row3{grid-template-columns:1fr;}
+  .bib-type{font-size:38px;}
+  .zone-grid{grid-template-columns:repeat(2,1fr);}
+}

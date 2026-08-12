@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Split Log — Training Ledger</title>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=IBM+Plex+Mono:wght@400;500;600&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+  <script src="app.js" defer></script>
+</head>
+<body>
+
+<div class="app">
+  <div class="masthead">
+    <div>
+      <h1>SPLIT LOG</h1>
+      <div class="sub">Training ledger</div>
+    </div>
+  </div>
+
+  <div class="tabs">
+    <button class="tab active" data-view="today">Today</button>
+    <button class="tab" data-view="plan">Plan</button>
+    <button class="tab" data-view="trends">Trends</button>
+    <button class="tab" data-view="settings">Settings</button>
+  </div>
+
+  <!-- TODAY -->
+  <div class="view active" id="view-today"></div>
+
+  <!-- PLAN -->
+  <div class="view" id="view-plan">
+    <div class="card">
+      <h3>Generate a plan</h3>
+      <div class="gen-row">
+        <div class="field">
+          <label for="fivekStartInput">Plan start date</label>
+          <input type="date" id="fivekStartInput">
+        </div>
+        <div class="field">
+          <label for="raceDateInput">Race date (5K)</label>
+          <input type="date" id="raceDateInput">
+        </div>
+        <button class="primary small" id="btnGen5k">Generate 5K plan</button>
+        <div class="field">
+          <label for="tenkStartInput">10K block start</label>
+          <input type="date" id="tenkStartInput">
+        </div>
+        <button class="small" id="btnGen10k">Generate 10K plan</button>
+      </div>
+      <div class="hint-after">Each generation creates a new plan card below — your existing plans aren't touched.</div>
+    </div>
+
+    <div id="planListPanel">
+      <div class="panel-head">
+        <div class="week-label">Your plans</div>
+        <button class="ghost small" id="btnShowArchive">Archive</button>
+      </div>
+      <div id="planList"></div>
+    </div>
+
+    <div id="planDetailPanel" class="is-hidden">
+      <button class="ghost small back-btn" id="btnBackToPlans">&larr; All plans</button>
+      <div class="card" id="planDetailHeader"></div>
+      <div id="ledger"></div>
+    </div>
+
+    <div id="planArchivePanel" class="is-hidden">
+      <button class="ghost small back-btn" id="btnBackFromArchive">&larr; All plans</button>
+      <div class="week-label panel-head">Archived plans</div>
+      <div id="archiveList"></div>
+    </div>
+  </div>
+
+  <!-- TRENDS -->
+  <div class="view" id="view-trends">
+    <div class="chart-wrap">
+      <h3>Zone 2 pace @ HR</h3>
+      <div class="chart-note">min/km on logged easy runs — should trend down over weeks</div>
+      <canvas id="chartPace"></canvas>
+    </div>
+    <div class="chart-wrap">
+      <h3>VO2max</h3>
+      <div class="chart-note">manually logged from Apple Watch, in Settings</div>
+      <canvas id="chartVo2"></canvas>
+    </div>
+    <div class="chart-wrap">
+      <h3>Weekly volume</h3>
+      <div class="chart-note">total km logged per week</div>
+      <canvas id="chartVolume"></canvas>
+    </div>
+  </div>
+
+  <!-- SETTINGS -->
+  <div class="view" id="view-settings">
+    <div class="card">
+      <h3>Zone ranges</h3>
+      <div class="hint">Choose how zones are calculated.</div>
+      <div class="field">
+        <label for="zoneMethodSelect">Method</label>
+        <select id="zoneMethodSelect">
+          <option value="manual">Manual ranges</option>
+          <option value="5k">% of all-out 5K avg HR</option>
+          <option value="maxhr">% of max HR</option>
+        </select>
+      </div>
+
+      <div id="methodManual">
+        <div class="row3" id="manualZoneInputs">
+          <div class="field"><label for="mzZ1">Zone 1 upper</label><input type="number" id="mzZ1"></div>
+          <div class="field"><label for="mzZ2lo">Zone 2 lower</label><input type="number" id="mzZ2lo"></div>
+          <div class="field"><label for="mzZ2hi">Zone 2 upper</label><input type="number" id="mzZ2hi"></div>
+          <div class="field"><label for="mzZ3lo">Zone 3 lower</label><input type="number" id="mzZ3lo"></div>
+          <div class="field"><label for="mzZ3hi">Zone 3 upper</label><input type="number" id="mzZ3hi"></div>
+          <div class="field"><label for="mzZ4lo">Zone 4 lower</label><input type="number" id="mzZ4lo"></div>
+          <div class="field"><label for="mzZ4hi">Zone 4 upper</label><input type="number" id="mzZ4hi"></div>
+          <div class="field"><label for="mzZ5lo">Zone 5 lower</label><input type="number" id="mzZ5lo"></div>
+        </div>
+        <button class="primary small" id="btnSaveManualZones">Save zone ranges</button>
+      </div>
+
+      <div id="method5k" class="is-hidden">
+        <div class="hint-mono">
+          Z1 ≤85% · Z2 85-89% · Z3 90-94% · Z4 95-99% · Z5 ≥100% of avg HR from an all-out 5K
+        </div>
+        <div class="field"><label for="race5kHrInput">All-out 5K avg HR (bpm)</label><input type="number" id="race5kHrInput"></div>
+        <button class="primary small" id="btnSave5kZones">Save</button>
+      </div>
+
+      <div id="methodMaxhr" class="is-hidden">
+        <div class="row">
+          <div class="field">
+            <label for="maxHrInput">Max HR (bpm)</label>
+            <input type="number" id="maxHrInput" placeholder="e.g. 188">
+          </div>
+          <div class="field">
+            <label for="restHrInput">Resting HR (bpm)</label>
+            <input type="number" id="restHrInput" placeholder="e.g. 58">
+          </div>
+        </div>
+        <button class="primary small" id="btnSaveHr">Save</button>
+      </div>
+
+      <div class="zone-grid" id="zoneGrid"></div>
+    </div>
+
+    <div class="card">
+      <h3>Pace targets</h3>
+      <div class="hint">Used to set the target pace shown on zone 2 / race-pace sessions when generating a plan. Format: min:sec per km, e.g. 7:10.</div>
+      <div class="row3">
+        <div class="field"><label for="paceZone2Input">Zone 2 pace</label><input type="text" id="paceZone2Input" placeholder="7:10"></div>
+        <div class="field"><label for="pace5kInput">5K goal pace</label><input type="text" id="pace5kInput" placeholder="6:00"></div>
+        <div class="field"><label for="pace10kInput">10K goal pace</label><input type="text" id="pace10kInput" placeholder="6:20"></div>
+      </div>
+      <button class="primary small" id="btnSavePaces">Save pace targets</button>
+    </div>
+
+    <div class="card">
+      <h3>VO2max log</h3>
+      <div class="row">
+        <div class="field">
+          <label for="vo2DateInput">Date</label>
+          <input type="date" id="vo2DateInput">
+        </div>
+        <div class="field">
+          <label for="vo2ValueInput">VO2max</label>
+          <input type="number" step="0.1" id="vo2ValueInput" placeholder="e.g. 39.4">
+        </div>
+      </div>
+      <button class="primary small" id="btnAddVo2">Add entry</button>
+      <div class="vo2-log" id="vo2Log"></div>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+</body>
+</html>

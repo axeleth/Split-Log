@@ -1,0 +1,49 @@
+# Secrets — never commit
+# `*.env` matches a bare `.env` too: git's `*` matches an empty string.
+*.env
+.env.*
+!.env.example
+
+# Dependencies — restored with `npm ci` from package-lock.json
+node_modules/
+
+# Claude Code: share project instructions, keep machine-local settings out.
+# settings.local.json holds per-machine tool permissions, not project config.
+.claude/settings.local.json
+
+# macOS
+.DS_Store
+*.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# Editors
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Logs and debug output
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.npm/
+
+# Test and coverage artefacts
+coverage/
+.nyc_output/
+
+# Build/scratch output
+dist/
+build/
+tmp/
+.cache/
+
+# Editor and tooling backups. Deliberately NOT ignoring tracker.html.bak:
+# CLAUDE.md documents it as the kept reference copy of the original
+# single-file artifact, so it belongs in the repo.
+*.orig
+*.rej

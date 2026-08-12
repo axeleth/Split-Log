@@ -1,0 +1,13 @@
+{
+  "name": "split-log",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Split Log — running training tracker (static single-page dashboard)",
+  "scripts": {
+    "test": "node test/smoke.js",
+    "serve": "python3 -m http.server 8080"
+  },
+  "devDependencies": {
+    "jsdom": "^29.1.1"
+  }
+}
