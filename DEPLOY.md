@@ -109,22 +109,39 @@ matcher and `systemctl reload caddy`.
 401 is therefore the **healthy** response for content pages without
 credentials — `status` reports it as expected, not as an error.
 
-## Known gap: persistence does not work on this host yet
+## Persistence when self-hosted
 
 `app.js` persists through `window.storage.get/set`, a key-value API injected by
 the **Claude.ai artifact host**. That object does not exist on a plain web
-server, so on the deployed site `loadAll()` finds no storage and the page
-renders empty — nothing is saved between reloads.
+server, so without help `loadAll()` would find no storage and the page would
+render empty, saving nothing between reloads.
 
-The deploy infrastructure is complete and correct; this is an application
-concern, deliberately left alone. The integration points are the 8
-`window.storage` references in `app.js`:
+`storage-shim.js` fills that gap. It provides the same API backed by
+`localStorage`, and `index.html` loads it immediately before `app.js` — both
+`defer`, and deferred scripts run in document order, so the shim is guaranteed
+to install first. `app.js` is untouched, so it still runs unmodified on the
+artifact host: the shim no-ops when a real `window.storage` already exists.
 
-- `loadAll()` — `window.storage.get('plans')`, `get('plan-days')`, `get('settings')`
-- `savePlans()` / `saveSettings()` — the two `set()` calls
-- the hardened save handlers — two further `set('plans', ...)` calls
+The contract it implements, taken from the mock in `test/smoke.js`:
 
-The smallest fix is a `localStorage`-backed shim defining `window.storage`
-before `app.js` runs, which needs no change to `app.js` itself. A shared or
-multi-device setup would instead need a real backend, which is a bigger change
-than this static-file topology assumes.
+```
+get(key)        -> { value: <string> } when present, null when absent
+set(key, value) -> truthy on success
+```
+
+Both shapes matter. `loadAll()` reads `.value` off the result and branches on a
+null for the migration path, and the hardened save handlers do `if(!ok) throw`.
+
+Keys are namespaced `splitlog:` so they cannot collide with anything else on the
+origin. If `localStorage` is unavailable — Safari private browsing, or a page
+opened via `file://` — the shim falls back to an in-memory store and warns on
+the console: the app still runs, but data is lost on reload.
+
+`npm test` covers both the app (`test/smoke.js`, against a mock) and the shim
+itself (`test/storage-shim.js`, against a real `localStorage`, including a
+reload round-trip and the no-op-on-a-real-host case).
+
+**This is per-browser storage.** Runs logged on your laptop do not appear on
+your phone, and clearing site data erases them. A shared or multi-device setup
+would need a real backend, which is a bigger change than this static-file
+topology assumes.

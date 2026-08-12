@@ -76,7 +76,7 @@ PUBLIC_DIR="${SPLITLOG_PUBLIC:-$HERE/public}"
 # Everything the site is made of. Kept explicit rather than globbed: a stray
 # file in public/ should not silently become part of the deployed site, and the
 # integrity check needs a definite list to compare against.
-ASSETS=(index.html login.html styles.css app.js)
+ASSETS=(index.html login.html styles.css storage-shim.js app.js)
 
 c_red=$'\033[31m'; c_grn=$'\033[32m'; c_ylw=$'\033[33m'; c_dim=$'\033[2m'; c_rst=$'\033[0m'
 say() { printf '%s\n' "$*"; }

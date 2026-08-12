@@ -11,6 +11,11 @@
   <link rel="stylesheet" href="styles.css">
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+  <!-- Provides window.storage (localStorage-backed) when not running on the
+       Claude.ai artifact host. Must come before app.js: deferred scripts run in
+       document order, so this is guaranteed to define window.storage first.
+       No-ops if a real window.storage already exists. -->
+  <script src="storage-shim.js" defer></script>
   <script src="app.js" defer></script>
 </head>
 <body>

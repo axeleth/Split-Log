@@ -8,12 +8,17 @@ VO2max trends). Originally built as a Claude.ai artifact using the
 ## Files
 
 ```
-index.html    markup only — no inline <style> or <script>
-styles.css    all styling, incl. the design tokens in :root
-app.js        all behaviour, wrapped in an IIFE, loaded with `defer`
-test/smoke.js jsdom smoke test — `npm test`
-tracker.html.bak   the original single-file version, kept for reference
+index.html         markup only — no inline <style> or <script>
+styles.css         all styling, incl. the design tokens in :root
+app.js             all behaviour, wrapped in an IIFE, loaded with `defer`
+storage-shim.js    window.storage over localStorage, for self-hosting
+public/            what gets deployed: login.html + symlinks to the above
+deploy.sh          check / deploy / status / provision / rollback
+test/smoke.js      jsdom smoke test of the app  — `npm run test:smoke`
+test/storage-shim.js  jsdom test of the shim    — `npm run test:shim`
 ```
+
+`npm test` runs both suites.
 
 `index.html` links `styles.css` in `<head>` and `app.js` with `defer`, so
 the script runs after parsing but before `DOMContentLoaded`. `app.js`
@@ -33,14 +38,23 @@ a single pasteable artifact file, inline the two files into one document.
 - **Fonts:** Bebas Neue (display/headers), IBM Plex Mono (stats/data/labels),
   Inter (body text) — loaded from Google Fonts.
 - **Persistence:** `window.storage.get/set(key, value, shared?)`, a
-  key-value async API injected by the Claude.ai artifact host. This is
-  **not** localStorage — do not use localStorage/sessionStorage, they don't
-  work in this environment.
+  key-value async API injected by the Claude.ai artifact host. **App code
+  must keep using `window.storage`** — never call localStorage or
+  sessionStorage directly from `app.js`, since neither exists on the
+  artifact host.
 
-If you move this off the Claude.ai artifact host (e.g. into a normal web
-app), the `window.storage` calls in `loadAll()`, `savePlans()`, and
-`saveSettings()` are the only integration points that need replacing —
-everything else is independent of the host.
+  When self-hosted, `storage-shim.js` supplies the same API backed by
+  `localStorage` (keys namespaced `splitlog:`). `index.html` loads it
+  immediately before `app.js`; both are `defer`, and deferred scripts run
+  in document order, so the shim always installs first. It no-ops when a
+  real `window.storage` is already present, so `app.js` runs unmodified in
+  both environments. The contract is
+  `get -> {value}|null`, `set -> truthy`, and both halves are load-bearing:
+  `loadAll()` reads `.value` and branches on null, and the hardened save
+  handlers do `if(!ok) throw`.
+
+`app.js` therefore stays host-agnostic: the shim is the only integration
+point, and it is a separate file precisely so `app.js` need not change.
 
 ## Storage schema
 
