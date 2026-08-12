@@ -1,6 +1,6 @@
 ---
 name: develop
-description: Build a new Split Log feature in an isolated git worktree with regression tests that persist after merge. Use when the user wants to add, build, implement, or change a feature in the Run Planner / Split Log tracker — especially when they say "develop", "add a feature", or want work kept off their current branch until it is tested.
+description: Plan, build and test a Split Log feature — plan mode first with questions answered and the plan approved, then an isolated git worktree, regression tests that persist after merge, and a locally served site to click through. Use when the user wants to add, build, implement, or change a feature in the Run Planner / Split Log tracker — especially when they say "develop", "add a feature", or want work kept off their current branch until it is tested.
 ---
 
 # develop
@@ -10,20 +10,70 @@ outlive it. The worktree is scaffolding; **the tests are the deliverable that
 persists** — every feature added later must keep them green, so old behaviour
 cannot quietly break.
 
-Work in the order below. Do not skip the test step because a change looks
-trivial: an untested feature is one nobody will notice breaking.
+The shape of a run:
 
-## 1. Understand before building
+```
+plan  ->  ask  ->  approve  ->  build  ->  test  ->  click around  ->  hand over
+```
 
-Read `CLAUDE.md` first — it lists gotchas that constrain every change
-(timezone-safe dates, no `confirm()`, no direct `localStorage` in `app.js`,
-derived pace). Then read the code you are about to touch. `PLAN.md` holds the
-running spec; check whether the feature is already described there.
+Nothing is written until the plan is approved, and nothing is merged until the
+user asks. Work in the order below, and do not skip the test step because a
+change looks trivial: an untested feature is one nobody will notice breaking.
 
-If the request is ambiguous in a way that changes what you build, ask before
-writing code, not after.
+## 1. Plan before touching anything
 
-## 2. Isolate
+**Call `EnterPlanMode` first**, before writing any code. This applies to
+essentially every feature request — the exceptions are a typo or a one-line
+fix the user has specified exactly.
+
+In plan mode, explore rather than assume:
+
+- Read `CLAUDE.md`. It lists gotchas that constrain every change (timezone-safe
+  dates, no `confirm()`, no direct `localStorage` in `app.js`, derived pace).
+  A plan that violates one of these is wrong before it starts.
+- Read the code the feature touches. `renderToday()`, `renderPlanList()` and the
+  other renderers do full innerHTML re-renders, so anything interactive needs
+  its listeners re-attached — know which renderer owns your surface.
+- Check `PLAN.md`. The feature may already be specified there, with decisions
+  already made.
+- Work out what could break. Which existing behaviour shares state, storage
+  keys, or DOM with the new thing?
+
+## 2. Ask about anything genuinely uncertain
+
+While still in plan mode, use `AskUserQuestion` for anything where two readings
+would lead to materially different work:
+
+- ambiguity in what was asked ("show my pace" — per run, per week, rolling?)
+- a choice the user should own (where it lives in the UI, what the default is)
+- a trade-off with real consequences (extra storage key vs. deriving on the fly)
+- anything touching their real training data or the storage schema
+
+Ask these **before** presenting the plan, so the plan reflects the answers.
+Batch related questions into one call rather than drip-feeding them.
+
+Do **not** ask about things you can settle yourself by reading the code, and do
+not ask permission to follow the conventions in `CLAUDE.md` — those are already
+decided. Judgement calls with an obvious default: make the call, state it in the
+plan, and move on.
+
+## 3. Present the plan and wait
+
+Write the plan, then call `ExitPlanMode` to request approval. `ExitPlanMode`
+**is** the approval request — never also ask "is this plan okay?" via
+`AskUserQuestion`, which would prompt twice for one decision.
+
+A good plan here says:
+
+- what will change, file by file
+- what the new tests will assert, including the one that must fail first
+- which existing behaviour is at risk, and how the tests cover it
+- anything deliberately out of scope
+
+Do not create the worktree or edit a file until the plan is approved. If the
+user changes the plan on approval, follow what they actually said.
+
+## 4. Isolate
 
 Create a worktree so the user's branch is untouched while you work:
 
@@ -34,7 +84,13 @@ EnterWorktree with name: feature-<short-slug>
 Everything below happens inside it. If `EnterWorktree` fails, say so and stop
 rather than editing the user's checkout.
 
-## 3. Build the feature
+A worktree has no `node_modules` of its own. Because worktrees live under
+`.claude/worktrees/` inside the repo, Node still resolves `jsdom` by walking up
+to the main checkout, so `npm test` works without installing anything. If it
+ever reports a missing module, run `npm install` in the worktree rather than
+concluding the tests are broken.
+
+## 5. Build the feature
 
 Match the surrounding code — its naming, its comment density, its idiom. The
 conventions in `CLAUDE.md` are binding:
@@ -49,7 +105,7 @@ conventions in `CLAUDE.md` are binding:
   `findDayEntry()` stays the single lookup path.
 - **Pace is derived** from distance and duration — never a manual input.
 
-## 4. Write the tests — the part that persists
+## 6. Write the tests — the part that persists
 
 Add a test file for the feature at `test/<feature-slug>.js`. `npm test`
 auto-discovers everything in `test/`, so there is no list to register it in, and
@@ -74,7 +130,7 @@ Write at least one test that **fails before the feature exists**. A test that
 passes against the old code is testing nothing. Verify this by stashing the
 change, running the test, and seeing it fail.
 
-## 5. Verify
+## 7. Verify
 
 ```bash
 npm run verify        # jsdom suites, then the real-HTTP serve check
@@ -90,13 +146,49 @@ change: fix the change, not the test. Only edit an existing test when the
 feature deliberately changes the behaviour it asserts, and say so explicitly
 when you report back.
 
-## 6. Report, then let the user decide
+## 8. Hand over a site they can click
+
+Tests prove the logic; they do not show whether the thing feels right. Finish by
+serving the worktree so the user can actually use it.
+
+Start the server **in the background from inside the worktree**, so the page
+they load is the new version and not their working copy:
+
+```bash
+npm run serve            # python3 -m http.server 8080, from the worktree root
+```
+
+Run it with `run_in_background: true` — a foreground server blocks the session.
+If 8080 is taken (their own `npm run serve`, or a previous run), use the next
+free port and say which:
+
+```bash
+python3 -m http.server 8081
+```
+
+Confirm it actually answers before handing over the link — `curl -s -o /dev/null
+-w '%{http_code}' http://127.0.0.1:8080/` should be 200. Then tell them:
+
+- **the URL**, e.g. http://127.0.0.1:8080/
+- **what to click** to exercise the new feature, in order
+- **what they should see** if it works
+- that it is served from the worktree, so their own checkout is untouched
+
+Storage is per-origin, so `localhost:8080` has its own `splitlog:` data,
+separate from the deployed site. Say so if the feature involves saved data —
+their real runs will not be there, and that is expected rather than a bug.
+
+Leave the server running while they look. Stop it when they are done, or when
+the work is merged or abandoned.
+
+## 9. Report, then let the user decide
 
 Commit inside the worktree, then report:
 
 - what changed, and which files
 - the new tests and what they cover
 - the full verify output
+- the local URL from step 8
 - anything deliberately left out
 
 **Do not merge to the user's branch without being asked.** They have merged
