@@ -176,6 +176,13 @@ rather than introducing new colors/fonts ad hoc.
    editable pace input anymore, only a live read-only display
    (`updateQlPaceDisplay`/`updateEdPaceDisplay`). Don't reintroduce a
    manual pace override field; it was removed intentionally.
+6. **`test/serve-check.sh` waits, then falls back to another port** if its
+   default is busy. That looks like over-engineering until you run
+   `npm run verify` twice in quick succession: the previous run's server
+   can still hold the port for a moment, and the old behaviour — refuse
+   and exit 1 — made the suite fail roughly one run in three. Keep the
+   retry-then-fallback. It must still refuse to test a port held by
+   something else, or it would check a stranger's server and pass.
 
 ## Testing
 

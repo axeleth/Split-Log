@@ -11,6 +11,11 @@ node_modules/
 # settings.local.json holds per-machine tool permissions, not project config.
 .claude/settings.local.json
 
+# Worktrees live inside the repo, so `git add -A` otherwise commits each one as
+# an embedded gitlink — a broken reference for anyone who clones. They are
+# scratch checkouts of this same repo; nothing in them needs tracking.
+.claude/worktrees/
+
 # macOS
 .DS_Store
 *.DS_Store

@@ -21,11 +21,30 @@ fails=0
 ok()   { printf '  %sPASS%s  %s\n' "$c_grn" "$c_rst" "$1"; }
 bad()  { printf '  %sFAIL%s  %s\n' "$c_red" "$c_rst" "$1"; fails=$((fails+1)); }
 
-# Refuse to start if something already holds the port: we would otherwise test
-# whatever that is and report a false pass.
-if lsof -nP -iTCP:"$PORT" -sTCP:LISTEN >/dev/null 2>&1; then
-  echo "Port $PORT is already in use. Stop it, or pass another port:" >&2
-  echo "  ./test/serve-check.sh 8081" >&2
+port_busy() { lsof -nP -iTCP:"$1" -sTCP:LISTEN >/dev/null 2>&1; }
+
+# Never serve on a port something else already holds — we would test whatever
+# that is and report a false pass. But a port held by *our own* previous run is
+# usually released a moment later, so a hard failure there makes the suite flaky,
+# and a flaky gate teaches people to ignore red. Wait briefly, then move to the
+# next free port rather than failing.
+if port_busy "$PORT"; then
+  for _ in 1 2 3 4 5 6; do
+    sleep 0.5
+    port_busy "$PORT" || break
+  done
+fi
+if port_busy "$PORT"; then
+  for alt in $(seq $((PORT+1)) $((PORT+20))); do
+    if ! port_busy "$alt"; then
+      echo "Port $PORT is in use; using $alt instead."
+      PORT="$alt"; BASE="http://127.0.0.1:$PORT"
+      break
+    fi
+  done
+fi
+if port_busy "$PORT"; then
+  echo "No free port in range $PORT..$((PORT+20)). Stop whatever is listening." >&2
   exit 1
 fi
 
