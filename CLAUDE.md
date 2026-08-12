@@ -147,6 +147,18 @@ Plan tab to the list panel — it deliberately does **not** remember which
 plan detail was open, since that caused a confusing bug where the tab
 looked "stuck" on a flat list (see Known Gotchas).
 
+Inside a plan's ledger, days dated before today are grouped into a
+collapsed `#prevRuns` section ("Previous runs (N)"), so the ledger opens on
+today rather than on weeks of history. Rows inside it are ordinary
+`.day-row`s and stay fully editable. The collapsed state is deliberately
+**not** persisted — reopening a plan always starts collapsed, matching how
+`switchView()` resets the Plan tab.
+
+The day editor has three actions: **Save**, **Clear day** (resets a logged
+day to `planned` and drops `actual`, keeping the planned session's type,
+title, detail and target pace — only shown when the day has data) and
+**Delete day** (removes the day entirely, behind an in-page confirm).
+
 ## Design language
 
 Dark "race bib / split-timer" theme — CSS variables in `:root` (`--bg`,
@@ -176,6 +188,13 @@ rather than introducing new colors/fonts ad hoc.
    editable pace input anymore, only a live read-only display
    (`updateQlPaceDisplay`/`updateEdPaceDisplay`). Don't reintroduce a
    manual pace override field; it was removed intentionally.
+6. **The day editor's delete confirm re-renders only `.close-row`**, via
+   `refreshEditorActions()` — not the whole editor. Rebuilding the editor
+   from `editorHtml()` there looks like the obvious simplification and
+   silently throws away anything the user has typed but not saved: arming
+   the confirm would blank the fields behind it. `dayDeleteStage` is also
+   reset whenever an editor opens or closes, so a half-armed confirm can't
+   linger and catch a later click on a different day.
 
 ## Testing
 

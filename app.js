@@ -675,36 +675,72 @@ function renderPlanLedger(planId){
   const dates = Object.keys(p.days).sort();
   if(dates.length===0){ wrap.innerHTML = '<div class="empty">No days in this plan.</div>'; return; }
 
-  let html = '';
-  let lastWeek = null;
-  dates.forEach(d=>{
-    const wl = isoWeekLabel(d);
-    if(wl!==lastWeek){ html += `<div class="week-label">${wl}</div>`; lastWeek=wl; }
-    const day = p.days[d];
-    const isToday = d===todayStr();
-    const statusText = day.status==='done' ? 'Done' : day.status==='skipped' ? 'Skipped' : '';
-    const subtitle = day.status==='done' && day.actual ?
-      `${day.actual.distance||'—'}km · ${day.actual.duration!=null?fmtDuration(day.actual.duration):'—'}${day.actual.pace? ' · '+fmtPace(day.actual.pace)+'/km':''}${day.actual.avgHr? ' · '+day.actual.avgHr+'bpm':''}`
-      : (day.detail||'') + (day.targetPace!=null ? ` (target ${fmtPace(day.targetPace)}/km)` : '');
-    html += `
-      <div class="day-row ${day.status==='done'?'done':''} ${isToday?'today':''}" data-date="${d}">
-        <div class="day-date">${fmtDate(d)}<br><span class="day-dow">${dow(d)}</span></div>
-        <span class="badge type-${day.type}">${typeLabel(day.type)}</span>
-        <div class="day-main">
-          <div class="day-title">${day.title}</div>
-          <div class="day-sub">${subtitle||''}</div>
+  // Days already gone by collapse into "Previous runs" so the ledger opens on
+  // today rather than on weeks of history. Purely date-based: a past rest day
+  // needs no logging, so tidying it away loses nothing.
+  const today = todayStr();
+  const past = dates.filter(d=> d < today);
+  const upcoming = dates.filter(d=> d >= today);
+
+  // Each group starts its own week run — sharing one `lastWeek` across the
+  // split would drop the first week label of the upcoming list.
+  function daysHtml(list){
+    let out = '';
+    let lastWeek = null;
+    list.forEach(d=>{
+      const wl = isoWeekLabel(d);
+      if(wl!==lastWeek){ out += `<div class="week-label">${wl}</div>`; lastWeek=wl; }
+      const day = p.days[d];
+      const isToday = d===today;
+      const statusText = day.status==='done' ? 'Done' : day.status==='skipped' ? 'Skipped' : '';
+      const subtitle = day.status==='done' && day.actual ?
+        `${day.actual.distance||'—'}km · ${day.actual.duration!=null?fmtDuration(day.actual.duration):'—'}${day.actual.pace? ' · '+fmtPace(day.actual.pace)+'/km':''}${day.actual.avgHr? ' · '+day.actual.avgHr+'bpm':''}`
+        : (day.detail||'') + (day.targetPace!=null ? ` (target ${fmtPace(day.targetPace)}/km)` : '');
+      out += `
+        <div class="day-row ${day.status==='done'?'done':''} ${isToday?'today':''}" data-date="${d}">
+          <div class="day-date">${fmtDate(d)}<br><span class="day-dow">${dow(d)}</span></div>
+          <span class="badge type-${day.type}">${typeLabel(day.type)}</span>
+          <div class="day-main">
+            <div class="day-title">${day.title}</div>
+            <div class="day-sub">${subtitle||''}</div>
+          </div>
+          <div class="day-status">${statusText}</div>
         </div>
-        <div class="day-status">${statusText}</div>
-      </div>
-      <div class="editor-slot" data-slot="${d}"></div>
+        <div class="editor-slot" data-slot="${d}"></div>
+      `;
+    });
+    return out;
+  }
+
+  let html = '';
+  if(past.length){
+    html += `
+      <button class="prev-runs-toggle" id="prevRunsToggle" aria-expanded="false" aria-controls="prevRuns">
+        <span class="prev-runs-chevron">▸</span>
+        Previous runs (${past.length})
+      </button>
+      <div id="prevRuns" class="is-hidden">${daysHtml(past)}</div>
     `;
-  });
+  }
+  html += upcoming.length ? daysHtml(upcoming)
+    : '<div class="empty">Nothing left ahead — the whole plan is in the past.</div>';
   wrap.innerHTML = html;
+
+  const toggle = $('#prevRunsToggle');
+  toggle?.addEventListener('click', ()=>{
+    const section = $('#prevRuns');
+    const nowHidden = section.classList.toggle('is-hidden');
+    toggle.setAttribute('aria-expanded', String(!nowHidden));
+    toggle.classList.toggle('open', !nowHidden);
+  });
 
   $$('.day-row').forEach(row=>{
     row.addEventListener('click', ()=>{
       const d = row.dataset.date;
       const slot = $(`.editor-slot[data-slot="${d}"]`);
+      // Opening or closing an editor drops any half-armed delete confirm, so
+      // it cannot catch a later click on a different day.
+      dayDeleteStage = {};
       if(slot.innerHTML){ slot.innerHTML=''; return; }
       $$('.editor-slot').forEach(s=>s.innerHTML='');
       slot.innerHTML = editorHtml(d, p.days[d]);
@@ -740,10 +776,37 @@ function editorHtml(date, day){
       </div>
       <div class="field"><label>Pace</label><div id="edPaceDisplay" class="pace-display">${a.pace!=null?fmtPace(a.pace)+'/km':'—'}</div></div>
       <div class="field"><label for="edNotes">Notes</label><input type="text" id="edNotes" value="${a.notes||''}"></div>
-      <div class="close-row">
-        <button class="ghost small" id="edDelete">Delete day</button>
-        <button class="primary small" id="edSave">Save</button>
+      ${editorActionsHtml(date, day)}
+    </div>
+  `;
+}
+
+// Deleting a day asks first. confirm() is silently swallowed by the sandboxed
+// host (gotcha #2), so this is an in-page state machine keyed by date, the
+// same shape as archiveDeleteStage. One stage, not the archive's two — a
+// single day is a smaller loss than a whole plan.
+let dayDeleteStage = {};
+
+// Only a day that actually carries a logged run can be cleared.
+function dayIsLogged(day){
+  return day.status==='done' || day.actual!=null;
+}
+
+function editorActionsHtml(date, day){
+  if(dayDeleteStage[date]){
+    return `
+      <div class="close-row confirming">
+        <div class="confirm-msg warn">Delete this day from the plan? This can't be undone.</div>
+        <button class="ghost small" id="edDeleteCancel">Cancel</button>
+        <button class="small danger" id="edDeleteConfirm">Delete day</button>
       </div>
+    `;
+  }
+  return `
+    <div class="close-row">
+      <button class="ghost small" id="edDelete">Delete day</button>
+      ${dayIsLogged(day) ? '<button class="ghost small" id="edClear">Clear day</button>' : ''}
+      <button class="primary small" id="edSave">Save</button>
     </div>
   `;
 }
@@ -753,7 +816,7 @@ function attachEditor(planId, date){
   $('#edDist')?.addEventListener('input', updateEdPaceDisplay);
   $('#edDur')?.addEventListener('input', updateEdPaceDisplay);
 
-  $('#edSave').addEventListener('click', async ()=>{
+  $('#edSave')?.addEventListener('click', async ()=>{
     const btn = $('#edSave');
     try{
       btn.disabled = true;
@@ -781,12 +844,76 @@ function attachEditor(planId, date){
       btn.disabled = false;
     }
   });
-  $('#edDelete').addEventListener('click', async ()=>{
-    delete p.days[date];
-    await savePlans();
-    showToast('Day removed');
-    renderPlanLedger(planId); renderToday(); renderCharts();
-  });
+  // Re-render only the button row, so arming or cancelling the confirm cannot
+  // discard whatever is typed in the editor's fields. Rebuilding the whole
+  // editor here would look tidier and would silently throw that input away.
+  function refreshEditorActions(){
+    const row = $('.editor .close-row');
+    if(!row) return;
+    row.outerHTML = editorActionsHtml(date, p.days[date]);
+    attachEditorActions();
+  }
+
+  function attachEditorActions(){
+    $('#edDelete')?.addEventListener('click', ()=>{
+      dayDeleteStage[date] = 1;
+      refreshEditorActions();
+    });
+    $('#edDeleteCancel')?.addEventListener('click', ()=>{
+      delete dayDeleteStage[date];
+      refreshEditorActions();
+    });
+
+    $('#edDeleteConfirm')?.addEventListener('click', async ()=>{
+      const btn = $('#edDeleteConfirm');
+      const removed = p.days[date];
+      try{
+        btn.disabled = true;
+        delete p.days[date];
+        const ok = await window.storage.set('plans', JSON.stringify(PLANS));
+        if(!ok) throw new Error('storage.set returned no result');
+      }catch(err){
+        // The write never landed — put the day back so memory matches storage.
+        p.days[date] = removed;
+        console.error('Failed to delete day:', err);
+        showToast('Could not delete — '+(err.message||'try again'));
+        if(btn) btn.disabled = false;
+        return;
+      }
+      delete dayDeleteStage[date];
+      showToast('Day removed');
+      renderPlanLedger(planId); renderToday();
+      try{ renderCharts(); }catch(chartErr){ console.error('Chart render failed (delete still succeeded):', chartErr); }
+    });
+
+    // Clearing keeps the planned session (type, title, detail, target pace)
+    // and drops only the logged run — the non-destructive counterpart to
+    // deleting the day outright.
+    $('#edClear')?.addEventListener('click', async ()=>{
+      const btn = $('#edClear');
+      const prevActual = p.days[date].actual;
+      const prevStatus = p.days[date].status;
+      try{
+        btn.disabled = true;
+        p.days[date].actual = null;
+        p.days[date].status = 'planned';
+        const ok = await window.storage.set('plans', JSON.stringify(PLANS));
+        if(!ok) throw new Error('storage.set returned no result');
+      }catch(err){
+        p.days[date].actual = prevActual;
+        p.days[date].status = prevStatus;
+        console.error('Failed to clear day:', err);
+        showToast('Could not clear — '+(err.message||'try again'));
+        if(btn) btn.disabled = false;
+        return;
+      }
+      showToast('Day cleared');
+      renderPlanLedger(planId); renderToday();
+      try{ renderCharts(); }catch(chartErr){ console.error('Chart render failed (clear still succeeded):', chartErr); }
+    });
+  }
+
+  attachEditorActions();
 }
 
 /* --------------------------------------------------------------------------
