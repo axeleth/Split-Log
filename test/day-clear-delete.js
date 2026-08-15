@@ -462,7 +462,7 @@ async function openDay(ctx, date) {
 
   // ---------------------------------------------------------------------
   // renderCharts() aggregates on status === 'done', so clearing a day must
-  // drop it out of the trends as well as the ledger.
+  // drop it out of the dashboard charts as well as the ledger.
   console.log('\n-- clearing a day removes it from the charts --');
   {
     const { w, $, $$ } = await openLedger();
@@ -473,10 +473,15 @@ async function openDay(ctx, date) {
     $('#edClear')?.click();
     await wait(150);
 
-    $$('.tab').find(t => t.dataset.view === 'trends').click();
+    // The charts live on the Today dashboard now; switching there repaints
+    // them. Look the pace chart up by canvas id rather than by position in
+    // __charts — the old index arithmetic only worked by accident of the
+    // order renderCharts() happens to construct them in.
+    $$('.tab').find(t => t.dataset.view === 'today').click();
     await wait(80);
 
-    const paceChart = w.__charts[w.__charts.length - 3];
+    const paceChart = w.__charts.filter(c => !c.destroyed)
+      .find(c => c.canvas && c.canvas.id === 'chartPace');
     const points = paceChart ? paceChart.cfg.data.datasets[0].data : null;
     check('cleared run no longer plotted', Array.isArray(points) && !points.includes(7),
           JSON.stringify(points));

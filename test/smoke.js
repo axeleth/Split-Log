@@ -97,7 +97,11 @@ function check(name, cond, extra) {
                     '.target-pace', '.badge.status-done', '.badge.status-skipped', '.bib-type.type-none',
                     '.archive-row.confirming', 'button.danger', 'button.danger-strong', 'button.icon',
                     '.day-dow', '.plan-detail-header', '.panel-head', '.hint', '.hint-mono',
-                    '.hint-after', '.zone-empty', '.back-btn'];
+                    '.hint-after', '.zone-empty', '.back-btn',
+                    // dashboard classes the Today renderer emits
+                    '.dash', '.dash-hero', '.dash-aside', '.stat-tile', '.stat-label',
+                    '.stat-value', '.stat-unit', '.stat-delta', '.target-zone',
+                    '.chart-row', '.chart-card', '.chart-canvas'];
     const missing = needed.filter(sel => !css.includes(sel));
     check('all promoted classes defined in CSS', missing.length === 0, 'missing: ' + missing.join(' '));
     check('.is-hidden actually hides', /\.is-hidden\s*\{\s*display:\s*none/.test(css));
@@ -174,17 +178,30 @@ function check(name, cond, extra) {
   check('editor save persisted', firstDay.status === 'done' && Math.abs(firstDay.actual.pace - 7) < 1e-9,
         JSON.stringify(firstDay.actual));
 
-  console.log('\n-- tab switching --');
-  $$('.tab').find(t => t.dataset.view === 'trends').click();
+  console.log('\n-- dashboard charts on Today --');
+  check('no trends tab remains', !$$('.tab').some(t => t.dataset.view === 'trends'));
+  check('no trends view remains', !$('#view-trends'));
+  check('nav is today/plan/settings',
+        $$('.tab').map(t => t.dataset.view).join(',') === 'today,plan,settings',
+        $$('.tab').map(t => t.dataset.view).join(','));
+
+  $$('.tab').find(t => t.dataset.view === 'today').click();
   await wait(60);
-  check('trends view active', $('#view-trends').classList.contains('active'));
+  check('today view active', $('#view-today').classList.contains('active'));
+  // The canvases live outside #todayMain precisely so a Today repaint cannot
+  // destroy them; assert they are still attached to the document.
+  check('canvases survive a Today repaint',
+        !!$('#chartPace') && !!$('#chartVo2') && !!$('#chartVolume'));
   const built = w.__charts;
   const live = built.filter(c => !c.destroyed);
   check('three charts live after render', live.length === 3, 'built=' + built.length + ' live=' + live.length);
   check('charts bound to the right canvases',
         live.map(c => c.canvas && c.canvas.id).sort().join(',') === 'chartPace,chartVo2,chartVolume',
         live.map(c => c.canvas && c.canvas.id).join(','));
-  check('prior charts destroyed, not leaked', built.length === 3 || built.filter(c => c.destroyed).length === built.length - 3,
+  // Stricter than the old form, which allowed `built.length === 3` because
+  // Trends was the first thing ever to build charts. init() now builds them,
+  // so every render past the first must have destroyed its predecessors.
+  check('prior charts destroyed, not leaked', built.filter(c => c.destroyed).length === built.length - 3,
         'built=' + built.length + ' destroyed=' + built.filter(c => c.destroyed).length);
   const paceChart = live.find(c => c.canvas.id === 'chartPace');
   check('pace y-axis formats as m:ss', paceChart.cfg.options.scales.y.ticks.callback(6.5) === '6:30',
@@ -248,7 +265,12 @@ function check(name, cond, extra) {
         async get(k) { return store.has(k) ? { value: store.get(k) } : null; },
         async set(k, v) { store.set(k, v); return true; },
       };
-      // Chart comes from the intercepted CDN response.
+      // The stub is needed here too, now that init() draws the dashboard
+      // charts on first paint. Without it, real Chart.js reaches jsdom's
+      // unimplemented canvas getContext() — a limitation of the test
+      // environment, not of the app, but it reports through the shared
+      // virtualConsole and would read as six spurious failures.
+      installChartStub(window);
     },
   });
   await new Promise(r => dom2.window.addEventListener('load', r));

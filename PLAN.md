@@ -352,6 +352,32 @@ assert on ordering:
 
 # 3. UI overhaul
 
+> **Status: built, and the scope changed on the way.** Today is now a
+> dashboard — bib hero, a stat column, and all three charts — and the Trends
+> tab is gone. The theme moved to a light "paper" palette derived from the
+> COVERD-YASA brand doc. Covered by `test/dashboard.js`.
+>
+> That **supersedes the "refinement, not a re-theme" line below**, which
+> assumed the dark chartreuse/coral/gold palette was settled. It wasn't: open
+> question 2 was answered "palette change", and question 4 supplied reference
+> screenshots (`screenshots/`). The Bebas / IBM Plex Mono / Inter type stack
+> did stay, as did the race-bib identity.
+>
+> Delivered: 3.1 (tokens — spacing, radius, shadow, type scale), 3.2 (hero:
+> countdown given more presence, HR zone beside target pace), 3.4 (charts:
+> palette validated with the `dataviz` skill, guard kept and hardened with a
+> retry), 3.6 (focus-visible, reduced-motion, three breakpoints, AA contrast
+> throughout — the `--text-muted` risk flagged below is fixed at 6.25:1).
+>
+> **Not built: 3.3** (sticky week headers, richer per-row status) and **3.5**
+> (panel transitions, motion). Both remain independently shippable. Note 3.5's
+> opacity/visibility approach still conflicts with `test/smoke.js`'s
+> `.is-hidden{display:none}` assertion — resolve that before starting it.
+>
+> Answered on the way: Q1 — scope was 3.1/3.2/3.4/3.6. Q2 — the palette
+> changed. Q3 — light mode is now the *only* mode, so a dark mode would be
+> new work. Q4 — yes, `screenshots/`.
+
 ## Goal
 
 Modernise the interface while keeping the "race bib / split-timer" identity.

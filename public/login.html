@@ -14,16 +14,22 @@
    served on its own with status 401, and a 401 body that has to fetch a
    stylesheet would flash unstyled while the gate is exactly what should look
    deliberate. */
+/* Mirrors the app's paper theme (styles.css §1). Kept in sync by hand — this
+   file is deliberately standalone, see the note above. */
 :root{
-  --bg:#101c17;
-  --surface:#182821;
-  --surface-2:#1f342b;
-  --border:#2c4036;
-  --text:#eaf1ec;
-  --text-muted:#8ea79b;
-  --z2:#c9e86a;
-  --hard:#ff6d47;
-  --gold:#e7b84e;
+  --bg:#faf9f5;
+  --surface:#ffffff;
+  --surface-2:#f2f0e9;
+  --border:#e8e6dc;
+  --border-strong:#d8d5c8;
+  --text:#141413;
+  --text-muted:#5f5d57;
+  --primary:#d97757;
+  --on-primary:#141413;   /* ink on orange = 5.9:1; white would be 3.12:1 */
+  --z2:#788c5d;
+  --hard:#c83c3c;
+  --gold:#d9a957;
+  --rest:#b0aea5;
 
   --font-display:'Bebas Neue',sans-serif;
   --font-mono:'IBM Plex Mono',monospace;
@@ -34,13 +40,15 @@
 html,body{height:100%;}
 body{margin:0;background:var(--bg);color:var(--text);font-family:var(--font-body);
   line-height:1.5;-webkit-font-smoothing:antialiased;
+  background-image:radial-gradient(circle,rgba(176,174,165,.12) 1px,transparent 1px);
+  background-size:28px 28px;
   display:flex;align-items:center;justify-content:center;padding:24px;}
 
 .card{width:100%;max-width:24rem;display:flex;flex-direction:column;gap:24px;}
 
 /* The masthead mirrors the app's own — display face, mono kicker, 2px rule. */
 header{display:flex;flex-direction:column;gap:6px;
-  border-bottom:2px solid var(--border);padding-bottom:14px;}
+  border-bottom:2px solid var(--border-strong);padding-bottom:14px;}
 h1{margin:0;font-family:var(--font-display);font-size:44px;letter-spacing:1.5px;
   line-height:1;}
 .sub{margin:0;font-family:var(--font-mono);font-size:11px;color:var(--text-muted);
@@ -51,23 +59,23 @@ h1{margin:0;font-family:var(--font-display);font-size:44px;letter-spacing:1.5px;
 .zones{display:flex;gap:3px;margin-top:8px;}
 .zones i{height:5px;flex:1;border-radius:1px;background:var(--border);
   display:block;transition:background .5s ease;}
-.zones i.on:nth-child(1){background:var(--rest,#5c7268);}
+.zones i.on:nth-child(1){background:var(--rest);}
 .zones i.on:nth-child(2){background:var(--z2);}
 .zones i.on:nth-child(3){background:var(--gold);}
-.zones i.on:nth-child(4){background:var(--hard);}
-.zones i.on:nth-child(5){background:var(--hard);}
+.zones i.on:nth-child(4){background:var(--primary);}
+.zones i.on:nth-child(5){background:var(--primary);}
 
 form{display:flex;flex-direction:column;gap:10px;}
 label{font-family:var(--font-mono);font-size:11px;letter-spacing:1px;
   text-transform:uppercase;color:var(--text-muted);}
 .field{display:flex;gap:8px;}
 input[type=password]{flex:1;min-width:0;padding:11px 12px;background:var(--surface);
-  color:var(--text);border:1px solid var(--border);border-radius:3px;
+  color:var(--text);border:1px solid var(--border-strong);border-radius:6px;
   font-family:var(--font-mono);font-size:15px;letter-spacing:1px;}
-input[type=password]:focus{outline:2px solid var(--z2);outline-offset:1px;
-  border-color:var(--z2);}
-button{padding:11px 18px;background:var(--z2);color:var(--bg);border:0;
-  border-radius:3px;font-family:var(--font-mono);font-size:12px;font-weight:600;
+input[type=password]:focus{outline:2px solid var(--primary);outline-offset:1px;
+  border-color:var(--primary);}
+button{padding:11px 18px;background:var(--primary);color:var(--on-primary);border:0;
+  border-radius:6px;font-family:var(--font-mono);font-size:12px;font-weight:600;
   letter-spacing:1px;text-transform:uppercase;cursor:pointer;
   transition:opacity .15s ease;}
 button:hover{opacity:.85;}

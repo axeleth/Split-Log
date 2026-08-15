@@ -165,8 +165,10 @@ function breakRenderer(w, d, selector, message) {
     $('#edDur').value = '28:00';
     $('#edDur').dispatchEvent(new w.Event('input'));
 
-    // #view-today is written by renderToday(), which runs after the save.
-    breakRenderer(w, d, '#view-today',
+    // #todayMain is written by renderToday(), which runs after the save.
+    // (#view-today is now a static shell holding the chart canvases, so
+    // patching it would no longer intercept the renderer at all.)
+    breakRenderer(w, d, '#todayMain',
       "undefined is not an object (evaluating 'window.storage.set')");
 
     $('#edSave').click();

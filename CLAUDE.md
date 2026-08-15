@@ -134,10 +134,32 @@ earlier data shape, pre-multi-plan redesign) and wraps it into a single
   `renderCharts()` / `renderSettings()` — full-innerHTML re-renders, not
   incremental DOM patches. Simple but means event listeners must be
   re-attached after every render (see `attachQuickLog`, `attachEditor`).
+  `renderToday()` targets `#todayMain`, **not** `#view-today` — see gotcha #9.
+- `computeDashboardStats()` — this week's km, the delta vs last week, runs
+  logged and average pace, for the dashboard's stat column. Pure; reads
+  `PLANS`, touches no DOM. Average pace is total time ÷ total distance, not
+  the mean of per-run paces, which would over-weight short runs. The delta is
+  `null` (rendered as an em dash) when last week logged nothing, rather than
+  a meaningless `+Infinity%`.
+- `isoWeekKey()` — the Monday of a date's week as a sortable `YYYY-MM-DD`.
+  Pairs with `isoWeekLabel()`, which is display-only (gotcha #13).
 
 ## UI structure
 
-Four tabs: **Today**, **Plan**, **Trends**, **Settings**.
+Three tabs: **Today**, **Plan**, **Settings**.
+
+**Today is the dashboard.** It holds the bib hero, a stat column (this week's
+km with a delta vs last week, runs logged, average pace) and all three charts.
+There is no Trends tab — it was folded in here.
+
+`#view-today` is a shell of two siblings, and the split is load-bearing:
+
+- `#todayMain` — everything `renderToday()` rewrites,
+- `#todayCharts` — the three `<canvas>` elements, which no renderer touches.
+
+`renderToday()` writes `innerHTML` into `#todayMain` only. Canvases live
+outside it so a repaint cannot destroy them and leave Chart.js bound to
+detached nodes (see Known Gotchas).
 
 Plan tab has three panels toggled via `display:none/block` (not separate
 routes): `#planListPanel` (card list), `#planDetailPanel` (one plan's
@@ -169,11 +191,21 @@ title, detail and target pace — only shown when the day has data) and
 
 ## Design language
 
-Dark "race bib / split-timer" theme — CSS variables in `:root` (`--bg`,
-`--surface`, `--z2` chartreuse for easy/zone2, `--hard` coral for
-intensity, `--rest` slate, `--gold` for race/target-pace accents). The
-"Today" hero card mimics a race bib. Keep new UI consistent with this
-rather than introducing new colors/fonts ad hoc.
+Light **"paper bib"** theme on the COVERD-YASA brand palette — CSS variables
+in `:root`: `--bg` `#faf9f5` paper, `--surface` white cards, `--text`
+`#141413` ink, `--primary` `#d97757` orange. Run types keep their old token
+names with new values: `--z2` green for easy, `--hard` orange for intensity,
+`--gold` amber for race, `--rest` warm gray.
+
+Each hue is a **pair** — the saturated hue for fills, the `-ink` variant for
+text (gotcha #12). Spacing, radius, shadow and type-scale tokens exist; use
+them rather than new literals. Shadows are warm-tinted from the ink, never
+neutral black, which smudges on warm paper.
+
+The "Today" hero still mimics a race bib, with the perforation strip down its
+left edge. Primary buttons are **ink on orange**, never white on orange
+(3.12:1, fails). Keep new UI consistent with this rather than introducing new
+colors or fonts ad hoc.
 
 ## Known gotchas (already fixed once, don't reintroduce)
 
@@ -216,7 +248,33 @@ rather than introducing new colors/fonts ad hoc.
    date. It reads like an off-by-one bug and is not one — "fixing" it to
    `DTEND == DTSTART` produces zero-length events that calendars drop or
    render on the wrong day.
-9. **Calendar `UID`s must stay deterministic** — `${plan.id}-${date}@splitlog`,
+9. **The chart canvases must stay OUTSIDE `#todayMain`.** They look like they
+   belong beside the rest of the Today markup, and moving them in is a one-line
+   "tidy-up" that breaks the dashboard subtly: `renderToday()` sets
+   `innerHTML`, so every repaint would delete the canvas nodes and leave the
+   live `Chart` objects bound to detached elements. The charts would render
+   once and then silently stop updating. `test/dashboard.js` asserts both that
+   the canvases are inside `#view-today` and that they are *not* inside
+   `#todayMain`.
+10. **`renderCharts()` is called from `init()` as well as `switchView()`.**
+    That looks redundant next to the `switchView('today')` hook, but nothing
+    else draws the charts on first paint — `switchView()` only runs on a tab
+    click, and there is no longer a Trends tab whose click did the job.
+11. **Chart colours are not the brand hexes, deliberately.** `CHART_COLORS`
+    uses deepened variants (`#c25a33`/`#2f6da8`/`#628a2e`) because the raw
+    brand blue and green fall below the chroma floor on the paper surface and
+    read as gray as data marks. Amber is deliberately absent: against the
+    green it scores ΔE 1.6 under protanopia. Re-run the `dataviz` skill's
+    `validate_palette.js` before changing any of them or adding a series.
+12. **Every semantic hue has an `-ink` partner in `styles.css`.** The
+    saturated hue paints fills and strokes; the ink writes text. This is not
+    duplication — the raw hues fail WCAG AA as text on paper (amber is
+    2.04:1), and they *are* used as text in 10px badges and `.target-pace`.
+13. **Weekly volume buckets on `isoWeekKey()`, not `isoWeekLabel()`.**
+    Bucketing on the display label and sorting those strings put "Week of 03
+    Feb" before "Week of 27 Jan". The two-function split looks redundant and
+    is not: one sorts, one displays.
+14. **Calendar `UID`s must stay deterministic** — `${plan.id}-${date}@splitlog`,
    never `genId()`. The UID is what lets a re-import *update* the events from
    a previous export instead of duplicating every session. `genId()` is random,
    so switching to it would silently turn each re-export into a duplicate set.
@@ -256,6 +314,13 @@ Current suites:
   real `localStorage`: the `get -> {value}|null` / `set -> truthy`
   contract, key namespacing, a reload round-trip, and that an existing
   `window.storage` is left untouched.
+- `test/dashboard.js` — drives the Today dashboard: the Trends tab is gone,
+  the canvases sit outside the re-rendered region, charts draw on first paint
+  with no tab click, stat tiles compute weighted average pace and a sane
+  delta, stats and charts survive both the no-session branch and a repaint
+  after logging, weekly volume bars ascend chronologically across a month
+  boundary, the validated chart palette is in use, and the page still renders
+  (and retries) when Chart.js never arrives.
 - `test/calendar-export.js` — clicks "Export to calendar" in a plan's
   ledger and asserts on the `.ics` the app actually produced: rest days
   excluded, done/skipped sessions included untagged, the exclusive

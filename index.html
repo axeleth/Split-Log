@@ -31,12 +31,36 @@
   <div class="tabs">
     <button class="tab active" data-view="today">Today</button>
     <button class="tab" data-view="plan">Plan</button>
-    <button class="tab" data-view="trends">Trends</button>
     <button class="tab" data-view="settings">Settings</button>
   </div>
 
-  <!-- TODAY -->
-  <div class="view active" id="view-today"></div>
+  <!-- TODAY — the dashboard. Two siblings, and the split matters:
+       renderToday() rewrites #todayMain's innerHTML wholesale, so any canvas
+       placed inside it would be destroyed on every repaint and Chart.js would
+       be left holding detached nodes. #todayCharts is static markup that no
+       renderer touches, which keeps the chart instances bound to stable
+       canvases. Do not move the canvases into #todayMain. -->
+  <div class="view active" id="view-today">
+    <div id="todayMain"></div>
+
+    <div class="chart-row" id="todayCharts">
+      <div class="chart-card">
+        <h3>Zone 2 pace @ HR</h3>
+        <div class="chart-note">min/km on logged easy runs — should trend down over weeks</div>
+        <div class="chart-canvas"><canvas id="chartPace"></canvas></div>
+      </div>
+      <div class="chart-card">
+        <h3>Weekly volume</h3>
+        <div class="chart-note">total km logged per week</div>
+        <div class="chart-canvas"><canvas id="chartVolume"></canvas></div>
+      </div>
+      <div class="chart-card">
+        <h3>VO2max</h3>
+        <div class="chart-note">manually logged from Apple Watch, in Settings</div>
+        <div class="chart-canvas"><canvas id="chartVo2"></canvas></div>
+      </div>
+    </div>
+  </div>
 
   <!-- PLAN -->
   <div class="view" id="view-plan">
@@ -82,25 +106,6 @@
       <button class="ghost small back-btn" id="btnBackFromArchive">&larr; All plans</button>
       <div class="week-label panel-head">Archived plans</div>
       <div id="archiveList"></div>
-    </div>
-  </div>
-
-  <!-- TRENDS -->
-  <div class="view" id="view-trends">
-    <div class="chart-wrap">
-      <h3>Zone 2 pace @ HR</h3>
-      <div class="chart-note">min/km on logged easy runs — should trend down over weeks</div>
-      <canvas id="chartPace"></canvas>
-    </div>
-    <div class="chart-wrap">
-      <h3>VO2max</h3>
-      <div class="chart-note">manually logged from Apple Watch, in Settings</div>
-      <canvas id="chartVo2"></canvas>
-    </div>
-    <div class="chart-wrap">
-      <h3>Weekly volume</h3>
-      <div class="chart-note">total km logged per week</div>
-      <canvas id="chartVolume"></canvas>
     </div>
   </div>
 

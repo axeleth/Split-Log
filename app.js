@@ -67,6 +67,16 @@ function isoWeekLabel(dateStr){
   const first = new Date(d); first.setDate(d.getDate()-d.getDay()+1);
   return "Week of "+first.toLocaleDateString('en-GB',{day:'2-digit',month:'short'});
 }
+// The Monday of dateStr's week as a sortable YYYY-MM-DD key. isoWeekLabel()
+// returns a DISPLAY string ("Week of 03 Feb") which sorts alphabetically, not
+// chronologically — bucketing on the label and sorting those keys puts Feb
+// before Jan and silently misorders the weekly volume bars. Bucket on this,
+// label with that. toLocalISODate keeps it timezone-safe (gotcha #1).
+function isoWeekKey(dateStr){
+  const d=new Date(dateStr+"T00:00:00");
+  const first = new Date(d); first.setDate(d.getDate()-d.getDay()+1);
+  return toLocalISODate(first);
+}
 
 function showToast(msg){
   const t=$("#toast"); t.textContent=msg; t.classList.add('show');
@@ -361,8 +371,89 @@ function typeLabel(t){
   return {zone2:'Zone 2', hard:'Intensity', rest:'Rest', race:'Race'}[t] || t;
 }
 
+// Aggregates for the dashboard's stat column. Pure: reads PLANS, touches no
+// DOM. The allDays flatten mirrors renderCharts() — every plan counts,
+// archived and adhoc included, since a logged run is a logged run wherever it
+// happens to live. `refDate` exists so tests can pin the reference week
+// without mocking Date; callers pass nothing.
+function computeDashboardStats(refDate){
+  const t = refDate || todayStr();
+  const thisWeek = isoWeekKey(t);
+  const lastWeek = addDays(thisWeek, -7);
+
+  const allDays = {};
+  PLANS.forEach(p=> Object.keys(p.days).forEach(d=>{ allDays[d] = p.days[d]; }));
+
+  let weekKm=0, lastWeekKm=0, runs=0, distSum=0, durSum=0;
+  Object.keys(allDays).forEach(d=>{
+    const day = allDays[d];
+    if(day.status!=='done' || !day.actual) return;
+    const k = isoWeekKey(d);
+    const km = day.actual.distance || 0;
+    if(k===lastWeek){ lastWeekKm += km; return; }
+    if(k!==thisWeek) return;
+    weekKm += km;
+    runs += 1;
+    // Total time over total distance — NOT the mean of per-run paces, which
+    // over-weights short runs. Only runs carrying both halves contribute.
+    if(km>0 && day.actual.duration>0){ distSum += km; durSum += day.actual.duration; }
+  });
+
+  // null, not 0 or Infinity: going from no runs to 20km is not "+∞%". The
+  // renderer shows an em dash for it.
+  const deltaPct = lastWeekKm>0 ? ((weekKm-lastWeekKm)/lastWeekKm)*100 : null;
+  const avgPace = distSum>0 ? durSum/distSum : null;
+  return { weekKm, lastWeekKm, deltaPct, runs, avgPace };
+}
+
+// Direction, not judgement — more volume isn't automatically good, so the
+// caller styles these as neutral ink rather than red/green.
+function fmtDelta(pct){
+  if(pct==null) return {text:'—', cls:'flat'};
+  const n = Math.round(pct);
+  if(n===0) return {text:'0% vs last week', cls:'flat'};
+  return { text:(n>0?'↑ +':'↓ ')+n+'% vs last week', cls:n>0?'up':'down' };
+}
+
+function renderStatTiles(){
+  const s = computeDashboardStats();
+  const d = fmtDelta(s.deltaPct);
+  return `
+    <div class="dash-aside">
+      <div class="stat-tile">
+        <div class="stat-label">This week</div>
+        <div class="stat-value">${s.weekKm.toFixed(1)}<span class="stat-unit">km</span></div>
+        <div class="stat-delta ${d.cls}">${d.text}</div>
+      </div>
+      <div class="stat-tile">
+        <div class="stat-label">Runs logged</div>
+        <div class="stat-value">${s.runs}</div>
+        <div class="stat-delta flat">this week</div>
+      </div>
+      <div class="stat-tile">
+        <div class="stat-label">Avg pace</div>
+        <div class="stat-value">${s.avgPace!=null?fmtPace(s.avgPace):'—'}<span class="stat-unit">/km</span></div>
+        <div class="stat-delta flat">this week</div>
+      </div>
+    </div>`;
+}
+
+// The HR band for a session type, so the bib can show the target zone beside
+// the target pace. computeZones() returns null when no method is configured,
+// and open-ended zones carry null bounds — both mean "nothing useful to show".
+function zoneHintHtml(type){
+  if(type!=='zone2') return '';
+  const zones = computeZones();
+  if(!zones) return '';
+  const row = zones[1];
+  if(!row || row.lo==null || row.hi==null) return '';
+  return ` <span class="target-zone">Z${row.n} · ${row.lo}-${row.hi} bpm</span>`;
+}
+
 function renderToday(){
-  const el = $('#view-today');
+  // Writes ONLY into #todayMain. The chart canvases are siblings in
+  // #todayCharts precisely so this innerHTML wipe cannot destroy them.
+  const el = $('#todayMain');
   const t = todayStr();
   const found = findDayEntry(t);
   const day = found ? found.day : null;
@@ -381,15 +472,24 @@ function renderToday(){
     countdownHtml = days===0 ? 'Race day' : (days+' day'+(days===1?'':'s')+' to race');
   }
 
+  // Built before the branch: the no-session path returns early, so stats
+  // added only to the populated path would vanish on rest days.
+  const statsHtml = renderStatTiles();
+
   if(!day){
     el.innerHTML = `
-      <div class="bib">
-        <div class="bib-top">
-          <div class="bib-date">${fmtDate(t)} · ${dow(t)}</div>
-          <div class="bib-countdown">${countdownHtml}</div>
+      <div class="dash">
+        <div class="dash-hero">
+          <div class="bib">
+            <div class="bib-top">
+              <div class="bib-date">${fmtDate(t)} · ${dow(t)}</div>
+              <div class="bib-countdown">${countdownHtml}</div>
+            </div>
+            <div class="bib-type type-none">No session planned</div>
+            <div class="bib-detail">Head to the Plan tab to generate a training block, or log a run manually below.</div>
+          </div>
         </div>
-        <div class="bib-type type-none">No session planned</div>
-        <div class="bib-detail">Head to the Plan tab to generate a training block, or log a run manually below.</div>
+        ${statsHtml}
       </div>
       ${renderQuickLog(t)}
     `;
@@ -409,22 +509,27 @@ function renderToday(){
     </div>` : '';
 
   el.innerHTML = `
-    <div class="bib">
-      <div class="bib-top">
-        <div class="bib-date">${fmtDate(t)} · ${dow(t)}</div>
-        <div class="bib-countdown">${countdownHtml}</div>
+    <div class="dash">
+      <div class="dash-hero">
+        <div class="bib">
+          <div class="bib-top">
+            <div class="bib-date">${fmtDate(t)} · ${dow(t)}</div>
+            <div class="bib-countdown">${countdownHtml}</div>
+          </div>
+          <div class="bib-type type-${day.type}">${day.title}</div>
+          <div class="bib-detail">${day.detail}${targetPaceHtml}${zoneHintHtml(day.type)} ${doneBadge}</div>
+          ${loggedMetricsHtml}
+          <div class="bib-actions">
+            ${day.status!=='done' ? `<button class="ghost small" id="btnSkip">Mark skipped</button>` : ''}
+          </div>
+        </div>
       </div>
-      <div class="bib-type type-${day.type}">${day.title}</div>
-      <div class="bib-detail">${day.detail}${targetPaceHtml} ${doneBadge}</div>
-      ${loggedMetricsHtml}
-      <div class="bib-actions">
-        ${day.status!=='done' ? `<button class="ghost small" id="btnSkip">Mark skipped</button>` : ''}
-      </div>
+      ${statsHtml}
     </div>
     ${renderQuickLog(t, day)}
   `;
   $('#btnSkip')?.addEventListener('click', async ()=>{
-    found.day.status='skipped'; await savePlans(); renderToday();
+    found.day.status='skipped'; await savePlans(); renderToday(); renderCharts();
   });
   attachQuickLog(t);
 }
@@ -1003,11 +1108,35 @@ let chartPace, chartVo2, chartVolume;
 
 // Colours here mirror the CSS custom properties — Chart.js can't read them
 // from the stylesheet, so keep the two in sync if the theme changes.
-const CHART_COLORS = { z2:'#c9e86a', gold:'#e7b84e', hard:'#ff6d47', muted:'#8ea79b', grid:'#2c4036' };
+//
+// These are NOT the raw brand hexes. As data marks on the #faf9f5 paper
+// surface those fail a colourblind/contrast validation — the brand blue and
+// green drop under the chroma floor and read as gray. These deepened variants
+// pass all six checks (lightness, chroma, CVD separation, normal-vision
+// separation, contrast). Amber is deliberately absent: against this green it
+// scores ΔE 1.6 under protanopia, i.e. indistinguishable. It stays a UI-only
+// accent. If you add a fourth series, re-run the validator first.
+const CHART_COLORS = {
+  pace:  '#c25a33',   // deep orange — zone 2 pace
+  vo2:   '#2f6da8',   // blue — VO2max
+  volume:'#628a2e',   // green — weekly volume
+  muted: '#5f5d57',   // axis ticks and titles
+  grid:  '#e8e6dc',
+};
 
 function renderCharts(){
   // Chart.js loads from a CDN; bail out quietly if it hasn't arrived yet.
-  if(typeof Chart === 'undefined'){ console.warn('Chart.js not loaded yet, skipping chart render'); return; }
+  // The charts are the landing page's main content now, so a slow CDN would
+  // otherwise leave three permanently blank boxes — when this was behind the
+  // Trends tab, the click that got you there was the retry. One self-
+  // cancelling retry covers it without leaking a listener or a loop.
+  if(typeof Chart === 'undefined'){
+    console.warn('Chart.js not loaded yet, skipping chart render');
+    if(!renderCharts._retry){
+      renderCharts._retry = setTimeout(()=>{ renderCharts._retry = null; renderCharts(); }, 400);
+    }
+    return;
+  }
   const allDays = {};
   PLANS.forEach(p=> Object.keys(p.days).forEach(d=>{ allDays[d] = p.days[d]; }));
 
@@ -1019,14 +1148,17 @@ function renderCharts(){
   const vo2Entries = SETTINGS.vo2Log.slice().sort((a,b)=> a.date<b.date?-1:1)
     .map(v=>({x:v.date,y:v.value}));
 
-  // weekly volume
+  // Weekly volume, bucketed on the sortable Monday key rather than on the
+  // display label — sorting "Week of 03 Feb" against "Week of 27 Jan"
+  // alphabetically put February first.
   const volByWeek = {};
   Object.keys(allDays).filter(d=> allDays[d].status==='done' && allDays[d].actual && allDays[d].actual.distance).forEach(d=>{
-    const wl = isoWeekLabel(d);
-    volByWeek[wl] = (volByWeek[wl]||0) + allDays[d].actual.distance;
+    const k = isoWeekKey(d);
+    volByWeek[k] = (volByWeek[k]||0) + allDays[d].actual.distance;
   });
-  const volLabels = Object.keys(volByWeek).sort();
-  const volData = volLabels.map(l=> +volByWeek[l].toFixed(1));
+  const volKeys = Object.keys(volByWeek).sort();      // ISO dates sort chronologically
+  const volLabels = volKeys.map(isoWeekLabel);        // display only
+  const volData = volKeys.map(k=> +volByWeek[k].toFixed(1));
 
   const commonOpts = (yLabel)=>({
     responsive:true, maintainAspectRatio:false,
@@ -1041,9 +1173,16 @@ function renderCharts(){
   if(chartVo2) chartVo2.destroy();
   if(chartVolume) chartVolume.destroy();
 
+  // Constructing a chart throws if the canvas won't give up a 2D context (a
+  // lost context, a headless DOM, a blocked canvas). The charts sit on the
+  // landing page now, so letting that escape would take the whole dashboard
+  // down — hero, stats and log form — over a decorative failure. Warn and
+  // leave the rest of the page working.
+  try{
+
   chartPace = new Chart($('#chartPace'), {
     type:'line',
-    data:{ labels: paceEntries.map(e=>fmtDate(e.x)), datasets:[{data:paceEntries.map(e=>e.y), borderColor:CHART_COLORS.z2, backgroundColor:CHART_COLORS.z2, tension:0.3, pointRadius:3}]},
+    data:{ labels: paceEntries.map(e=>fmtDate(e.x)), datasets:[{data:paceEntries.map(e=>e.y), borderColor:CHART_COLORS.pace, backgroundColor:CHART_COLORS.pace, tension:0.3, pointRadius:3, borderWidth:2}]},
     options: {
       ...commonOpts('min/km'),
       plugins:{ legend:{display:false}, tooltip:{ callbacks:{ label:(ctx)=> fmtPace(ctx.parsed.y)+'/km' } } },
@@ -1055,14 +1194,18 @@ function renderCharts(){
   });
   chartVo2 = new Chart($('#chartVo2'), {
     type:'line',
-    data:{ labels: vo2Entries.map(e=>fmtDate(e.x)), datasets:[{data:vo2Entries.map(e=>e.y), borderColor:CHART_COLORS.gold, backgroundColor:CHART_COLORS.gold, tension:0.3, pointRadius:3}]},
+    data:{ labels: vo2Entries.map(e=>fmtDate(e.x)), datasets:[{data:vo2Entries.map(e=>e.y), borderColor:CHART_COLORS.vo2, backgroundColor:CHART_COLORS.vo2, tension:0.3, pointRadius:3, borderWidth:2}]},
     options: commonOpts('VO2max')
   });
   chartVolume = new Chart($('#chartVolume'), {
     type:'bar',
-    data:{ labels: volLabels, datasets:[{data:volData, backgroundColor:CHART_COLORS.hard}]},
+    data:{ labels: volLabels, datasets:[{data:volData, backgroundColor:CHART_COLORS.volume, borderRadius:4}]},
     options: commonOpts('km')
   });
+
+  }catch(err){
+    console.warn('[Split Log] Charts unavailable:', (err && err.message) || err);
+  }
 }
 
 /* --------------------------------------------------------------------------
@@ -1074,10 +1217,11 @@ function renderCharts(){
 function switchView(name){
   $$('.tab').forEach(t=> t.classList.toggle('active', t.dataset.view===name));
   $$('.view').forEach(v=> v.classList.toggle('active', v.id==='view-'+name));
-  if(name==='trends') renderCharts();
   if(name==='settings') renderSettings();
   if(name==='plan') closePlanDetail();
-  if(name==='today') renderToday();
+  // Today owns the charts now. renderToday() first: it rebuilds the stat
+  // tiles, and renderCharts() repaints the canvases beside them.
+  if(name==='today'){ renderToday(); renderCharts(); }
 }
 
 function bindEvents(){
@@ -1186,6 +1330,9 @@ async function init(){
   renderToday();
   renderPlanList();
   renderSettings();
+  // Charts are on the landing tab now, so first paint has to draw them.
+  // Nothing else would: switchView() only fires on a tab click.
+  renderCharts();
 }
 
 /* --------------------------------------------------------------------------
