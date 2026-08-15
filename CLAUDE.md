@@ -154,6 +154,14 @@ today rather than on weeks of history. Rows inside it are ordinary
 **not** persisted — reopening a plan always starts collapsed, matching how
 `switchView()` resets the Plan tab.
 
+A plan's detail header carries two actions: **Export to calendar** (section
+12 — builds an `.ics` of that plan and downloads it) and **Archive plan**.
+The export covers every session except rest days, at any status, as all-day
+events. There is deliberately no subscribable feed: the deployed site sits
+behind a Caddy cookie gate that 401s anything without the login cookie, and
+a calendar client polling a subscription sends no cookies — a feed would
+mean publishing training data at an unauthenticated URL.
+
 The day editor has three actions: **Save**, **Clear day** (resets a logged
 day to `planned` and drops `actual`, keeping the planned session's type,
 title, detail and target pace — only shown when the day has data) and
@@ -202,6 +210,18 @@ rather than introducing new colors/fonts ad hoc.
    the confirm would blank the fields behind it. `dayDeleteStage` is also
    reset whenever an editor opens or closes, so a half-armed confirm can't
    linger and catch a later click on a different day.
+8. **The `.ics` exporter's `DTEND` is deliberately the day *after* the
+   session** (`addDays(d, 1)` in `buildICS()`). In iCalendar an all-day
+   `DTEND` is **exclusive**, so a one-day event genuinely ends on the next
+   date. It reads like an off-by-one bug and is not one — "fixing" it to
+   `DTEND == DTSTART` produces zero-length events that calendars drop or
+   render on the wrong day.
+9. **Calendar `UID`s must stay deterministic** — `${plan.id}-${date}@splitlog`,
+   never `genId()`. The UID is what lets a re-import *update* the events from
+   a previous export instead of duplicating every session. `genId()` is random,
+   so switching to it would silently turn each re-export into a duplicate set.
+   For the same reason `icsDate()` strips dashes off the stored key rather
+   than round-tripping through `Date` — see gotcha #1.
 
 ## Testing
 
@@ -236,6 +256,14 @@ Current suites:
   real `localStorage`: the `get -> {value}|null` / `set -> truthy`
   contract, key namespacing, a reload round-trip, and that an existing
   `window.storage` is left untouched.
+- `test/calendar-export.js` — clicks "Export to calendar" in a plan's
+  ledger and asserts on the `.ics` the app actually produced: rest days
+  excluded, done/skipped sessions included untagged, the exclusive
+  `DTEND`, stable `UID`s across two exports, dates matching the stored
+  keys with no timezone drift, RFC 5545 escaping and 75-octet folding,
+  and the copy-to-clipboard fallback for hosts that block downloads.
+  It captures the file by stubbing `URL.createObjectURL` in
+  `beforeParse`, since `app.js` exports nothing to `window`.
 
 Use `/develop` to add a feature: it builds in a git worktree and requires
 a test that fails before the feature exists.

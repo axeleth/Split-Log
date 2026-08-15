@@ -659,9 +659,13 @@ function openPlanDetail(planId){
         <div class="plan-detail-title">${p.name}</div>
         <div class="plan-detail-range">${planTypeLabel(p.type)} · ${range}</div>
       </div>
-      <button class="ghost small" id="btnArchivePlan">Archive plan</button>
+      <div class="plan-detail-actions">
+        <button class="ghost small" id="btnExportIcs">Export to calendar</button>
+        <button class="ghost small" id="btnArchivePlan">Archive plan</button>
+      </div>
     </div>
   `;
+  $('#btnExportIcs').addEventListener('click', ()=> exportPlanToCalendar(p));
   $('#btnArchivePlan').addEventListener('click', async ()=>{
     p.archived = true;
     await savePlans();
@@ -1182,6 +1186,170 @@ async function init(){
   renderToday();
   renderPlanList();
   renderSettings();
+}
+
+/* --------------------------------------------------------------------------
+   12. Calendar export — iCalendar (.ics)
+   One all-day VEVENT per session, for import into Apple Calendar or any other
+   calendar app. Pure string building: buildICS() touches no state and no DOM.
+   -------------------------------------------------------------------------- */
+
+// RFC 5545 escaping. Backslash MUST be replaced first — doing it last would
+// double-escape the backslashes introduced by the other replacements.
+function icsEscape(str){
+  return String(str==null?'':str)
+    .replace(/\\/g,'\\\\')
+    .replace(/;/g,'\\;')
+    .replace(/,/g,'\\,')
+    .replace(/\r\n|\r|\n/g,'\\n');
+}
+
+// Content lines fold at 75 octets, not 75 characters: a multi-byte character
+// split across the boundary would corrupt it. Measure in UTF-8 bytes and break
+// on character boundaries, continuing with a leading space.
+function icsFold(line){
+  const enc = s => new TextEncoder().encode(s).length;
+  if(enc(line) <= 75) return line;
+  const out = [];
+  let cur = '';
+  let limit = 75;                       // continuation lines lose one octet to the space
+  for(const ch of line){
+    if(enc(cur + ch) > limit){ out.push(cur); cur = ch; limit = 74; }
+    else cur += ch;
+  }
+  if(cur) out.push(cur);
+  return out.join('\r\n ');
+}
+
+// 'YYYY-MM-DD' -> 'YYYYMMDD', straight off the stored key. Deliberately no Date
+// round-trip: parsing and reformatting is what reintroduces the timezone bug.
+function icsDate(dateStr){ return String(dateStr).replace(/-/g,''); }
+
+// UTC timestamp for DTSTAMP, which RFC 5545 requires on every VEVENT. This one
+// is a real instant rather than a calendar date, so toISOString() is correct
+// here — the gotcha #1 ban is on date-only strings.
+function icsStamp(d){ return d.toISOString().replace(/[-:]/g,'').replace(/\.\d{3}/,''); }
+
+function planIcsFilename(plan){
+  const slug = String(plan.name||'plan').toLowerCase()
+    .replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'') || 'plan';
+  return slug + '.ics';
+}
+
+// The zone a session is meant to sit in, as a bpm range, so the description
+// carries the target and not just the prose.
+function icsZoneHint(type){
+  const zones = computeZones();
+  if(!zones) return '';
+  const n = type==='zone2' ? 2 : type==='hard' ? 4 : type==='race' ? 5 : 0;
+  if(!n) return '';
+  const z = zones.find(x=>x.n===n);
+  if(!z) return '';
+  const range = z.lo==null ? `<${z.hi}` : z.hi==null ? `${z.lo}+` : `${z.lo}-${z.hi}`;
+  return `Target HR: Z${z.n} ${range} bpm`;
+}
+
+// Pure — returns the .ics text for one plan. Rest days are left out: they are
+// nothing to do and would only be calendar noise. Everything else is exported
+// whatever its status, as an ordinary session with no done/skipped marker,
+// since the export is normally taken when the plan is created.
+function buildICS(plan){
+  const dates = Object.keys(plan.days).sort().filter(d=> plan.days[d].type!=='rest');
+  if(!dates.length) return null;
+
+  const stamp = icsStamp(new Date());
+  const lines = [
+    'BEGIN:VCALENDAR',
+    'VERSION:2.0',
+    'PRODID:-//Split Log//Training Ledger//EN',
+    'CALSCALE:GREGORIAN',
+    'METHOD:PUBLISH',
+    'X-WR-CALNAME:' + icsEscape(plan.name),
+  ];
+
+  dates.forEach(d=>{
+    const day = plan.days[d];
+    const desc = [
+      day.detail || '',
+      day.targetPace!=null ? `Target pace: ${fmtPace(day.targetPace)}/km` : '',
+      icsZoneHint(day.type),
+    ].filter(Boolean).join('\n');
+
+    lines.push(
+      'BEGIN:VEVENT',
+      // Stable and deterministic, so re-importing an updated plan UPDATES the
+      // existing event instead of duplicating it. Never genId() here.
+      'UID:' + plan.id + '-' + d + '@splitlog',
+      'DTSTAMP:' + stamp,
+      'DTSTART;VALUE=DATE:' + icsDate(d),
+      // All-day DTEND is EXCLUSIVE, so a one-day event ends the NEXT day.
+      'DTEND;VALUE=DATE:' + icsDate(addDays(d, 1)),
+      'SUMMARY:' + icsEscape(day.title || typeLabel(day.type)),
+      'DESCRIPTION:' + icsEscape(desc),
+      'CATEGORIES:' + icsEscape(typeLabel(day.type)),
+      'SEQUENCE:0',
+      'TRANSP:TRANSPARENT',
+      'END:VEVENT'
+    );
+  });
+
+  lines.push('END:VCALENDAR');
+  return lines.map(icsFold).join('\r\n') + '\r\n';
+}
+
+// Blob + synthetic <a download>. The artifact host runs the app in a sandboxed
+// iframe which may block this the same way it blocks confirm() (gotcha #2), so
+// the caller falls back to showing the text when this returns false.
+function downloadICS(text, filename){
+  try{
+    const blob = new Blob([text], {type:'text/calendar;charset=utf-8'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(()=> URL.revokeObjectURL(url), 0);
+    return true;
+  }catch(e){
+    return false;
+  }
+}
+
+// Fallback surface when the download is blocked: the .ics text, selectable, with
+// a copy button. In-page rather than a dialog, for the same reason every other
+// confirm in this app is in-page.
+function showIcsFallback(text, filename){
+  const box = $('#icsFallback');
+  if(!box) return;
+  box.classList.remove('is-hidden');
+  box.innerHTML = `
+    <div class="ics-fallback-head">
+      <span>Download blocked — copy this into a file named ${filename}</span>
+      <button class="ghost small" id="btnIcsCopy">Copy</button>
+      <button class="ghost small" id="btnIcsClose">Close</button>
+    </div>
+    <textarea class="ics-text" id="icsText" readonly rows="8"></textarea>
+  `;
+  $('#icsText').value = text;
+  $('#btnIcsCopy').addEventListener('click', ()=>{
+    const ta = $('#icsText');
+    ta.select();
+    navigator.clipboard?.writeText(text).catch(()=>{});
+    showToast('Copied');
+  });
+  $('#btnIcsClose').addEventListener('click', ()=>{
+    box.classList.add('is-hidden');
+    box.innerHTML = '';
+  });
+}
+
+function exportPlanToCalendar(plan){
+  const text = buildICS(plan);
+  if(!text){ showToast('Nothing to export — no sessions in this plan'); return; }
+  const filename = planIcsFilename(plan);
+  if(downloadICS(text, filename)) showToast('Calendar file exported');
+  else showIcsFallback(text, filename);
 }
 
 // The script is deferred, so the DOM may already be parsed by the time it runs.

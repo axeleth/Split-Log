@@ -72,6 +72,9 @@
     <div id="planDetailPanel" class="is-hidden">
       <button class="ghost small back-btn" id="btnBackToPlans">&larr; All plans</button>
       <div class="card" id="planDetailHeader"></div>
+      <!-- Only populated when a Blob download is blocked (sandboxed host);
+           otherwise stays empty and hidden. -->
+      <div class="card is-hidden" id="icsFallback"></div>
       <div id="ledger"></div>
     </div>
 
