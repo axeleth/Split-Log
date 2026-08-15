@@ -287,6 +287,68 @@ async function boot(plans, settings) {
   }
 
   // -------------------------------------------------------------------
+  console.log('\n-- the quick-log card opens from the hero and closes again --');
+  {
+    const plans = [{
+      id: 'p_seed', name: 'Seed', type: '5k', startDate: shift(-5), raceDate: shift(20),
+      archived: false, days: { [shift(0)]: { type: 'zone2', title: 'Easy run', detail: 'x',
+        targetPace: 7, status: 'planned', actual: null } },
+    }];
+    const { $, $$, w } = await boot(plans);
+
+    check('quick-log starts collapsed', $('#quickLogCard').classList.contains('is-hidden'));
+    check('hero offers a Log run button', !!$('#btnOpenLog'));
+    // Order and emphasis: Log run first and orange, Skip second and plain.
+    const actions = $$('#todayMain .bib-actions button');
+    check('log run comes before skip', actions.map(b => b.id).join(',') === 'btnOpenLog,btnSkip',
+          actions.map(b => b.id).join(','));
+    check('log run is the primary action', actions[0].classList.contains('primary'));
+    check('skip is not primary', !actions[1].classList.contains('primary'));
+    check('skip is relabelled', actions[1].textContent.trim() === 'Skip', actions[1].textContent);
+
+    $('#btnOpenLog').click();
+    await wait(60);
+    check('opens on click', !$('#quickLogCard').classList.contains('is-hidden'));
+
+    // Typing then closing and reopening must not lose the input: open/close
+    // toggles the class rather than re-rendering Today.
+    $('#qlDist').value = '5';
+    $('#qlDist').dispatchEvent(new w.Event('input'));
+    $('#btnQlClose').click();
+    await wait(60);
+    check('closes from its own X', $('#quickLogCard').classList.contains('is-hidden'));
+    $('#btnOpenLog').click();
+    await wait(60);
+    check('typed input survives a close/open', $('#qlDist').value === '5', $('#qlDist').value);
+
+    // Saving collapses it again, since the metrics then show on the bib.
+    $('#qlDur').value = '35:00';
+    $('#qlDur').dispatchEvent(new w.Event('input'));
+    $('#btnLog').click();
+    await wait(200);
+    check('collapses again after saving', $('#quickLogCard').classList.contains('is-hidden'));
+    check('run actually logged', $('#todayMain').innerHTML.includes('metric-value'));
+    check('logged day offers Edit run', $('#btnOpenLog').textContent.trim() === 'Edit run',
+          $('#btnOpenLog').textContent);
+  }
+
+  // -------------------------------------------------------------------
+  console.log('\n-- a day with no session can still log a run --');
+  {
+    const plans = [{
+      id: 'p_seed', name: 'Seed', type: '5k', startDate: shift(-30), raceDate: shift(-10),
+      archived: false, days: { [shift(-20)]: mkRun(6, 42) },
+    }];
+    const { $ } = await boot(plans);
+    check('no session today', $('#todayMain').innerHTML.includes('No session planned'));
+    check('still offers Log run', !!$('#btnOpenLog'));
+    check('quick-log collapsed here too', $('#quickLogCard').classList.contains('is-hidden'));
+    $('#btnOpenLog').click();
+    await wait(60);
+    check('opens on the empty branch', !$('#quickLogCard').classList.contains('is-hidden'));
+  }
+
+  // -------------------------------------------------------------------
   // Gotcha #4: renderCharts() bails out quietly when Chart.js hasn't arrived.
   // That guard matters more now the charts are on the landing page — the rest
   // of the dashboard must still render, and the retry must eventually draw

@@ -16,9 +16,11 @@ public/            what gets deployed: login.html + symlinks to the above
 deploy.sh          check / deploy / status / provision / rollback
 test/smoke.js      jsdom smoke test of the app  — `npm run test:smoke`
 test/storage-shim.js  jsdom test of the shim    — `npm run test:shim`
+test/*.js          every other suite, auto-discovered by test/run-all.js
 ```
 
-`npm test` runs both suites.
+`npm test` runs every suite in `test/`; `npm run verify` adds the real-HTTP
+serve check.
 
 `index.html` links `styles.css` in `<head>` and `app.js` with `defer`, so
 the script runs after parsing but before `DOMContentLoaded`. `app.js`
@@ -34,7 +36,7 @@ a single pasteable artifact file, inline the two files into one document.
 
 - **No framework.** Vanilla HTML + CSS + JS, no build step.
 - **Chart.js** (loaded via `<script src="https://cdnjs.cloudflare.com/...">`) for
-  the three Trends charts (pace, VO2max, weekly volume).
+  the three dashboard charts (pace, VO2max, weekly volume) on the Today tab.
 - **Fonts:** Bebas Neue (display/headers), IBM Plex Mono (stats/data/labels),
   Inter (body text) — loaded from Google Fonts.
 - **Persistence:** `window.storage.get/set(key, value, shared?)`, a
@@ -142,7 +144,7 @@ earlier data shape, pre-multi-plan redesign) and wraps it into a single
   `null` (rendered as an em dash) when last week logged nothing, rather than
   a meaningless `+Infinity%`.
 - `isoWeekKey()` — the Monday of a date's week as a sortable `YYYY-MM-DD`.
-  Pairs with `isoWeekLabel()`, which is display-only (gotcha #13).
+  Pairs with `isoWeekLabel()`, which is display-only (gotcha #14).
 
 ## UI structure
 
@@ -160,6 +162,18 @@ There is no Trends tab — it was folded in here.
 `renderToday()` writes `innerHTML` into `#todayMain` only. Canvases live
 outside it so a repaint cannot destroy them and leave Chart.js bound to
 detached nodes (see Known Gotchas).
+
+The hero card stretches to match the height of the three stat tiles beside it
+(`.dash` uses the grid's default `align-items:stretch`, `.bib` takes `flex:1`,
+and `.bib-actions` is pinned down with `margin-top:auto`).
+
+Its two actions are **Log run** (primary) and **Skip** (ghost). "Log run"
+expands the quick-log card, which is **collapsed by default** and closed again
+by the `×` in its own header. The open state lives in the module-level
+`quickLogOpen`, which — like the ledger's "Previous runs" section — is
+deliberately not persisted, but does survive a `renderToday()` repaint. On a
+day that already has a logged run the button reads "Edit run"; saving
+collapses the card again, since the metrics then appear on the bib itself.
 
 Plan tab has three panels toggled via `display:none/block` (not separate
 routes): `#planListPanel` (card list), `#planDetailPanel` (one plan's
@@ -270,11 +284,15 @@ colors or fonts ad hoc.
     saturated hue paints fills and strokes; the ink writes text. This is not
     duplication — the raw hues fail WCAG AA as text on paper (amber is
     2.04:1), and they *are* used as text in 10px badges and `.target-pace`.
-13. **Weekly volume buckets on `isoWeekKey()`, not `isoWeekLabel()`.**
+13. **The quick-log open/close toggles a class; it does not re-render Today.**
+    Calling `renderToday()` from those handlers looks more consistent with the
+    rest of the app and would throw away whatever the user has already typed
+    into the form — the same trap as the day editor's delete confirm (#7).
+14. **Weekly volume buckets on `isoWeekKey()`, not `isoWeekLabel()`.**
     Bucketing on the display label and sorting those strings put "Week of 03
     Feb" before "Week of 27 Jan". The two-function split looks redundant and
     is not: one sorts, one displays.
-14. **Calendar `UID`s must stay deterministic** — `${plan.id}-${date}@splitlog`,
+15. **Calendar `UID`s must stay deterministic** — `${plan.id}-${date}@splitlog`,
    never `genId()`. The UID is what lets a re-import *update* the events from
    a previous export instead of duplicating every session. `genId()` is random,
    so switching to it would silently turn each re-export into a duplicate set.

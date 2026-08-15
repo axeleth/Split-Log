@@ -101,7 +101,8 @@ function check(name, cond, extra) {
                     // dashboard classes the Today renderer emits
                     '.dash', '.dash-hero', '.dash-aside', '.stat-tile', '.stat-label',
                     '.stat-value', '.stat-unit', '.stat-delta', '.target-zone',
-                    '.chart-row', '.chart-card', '.chart-canvas'];
+                    '.chart-row', '.chart-card', '.chart-canvas',
+                    '.ql-head', '.ql-close'];
     const missing = needed.filter(sel => !css.includes(sel));
     check('all promoted classes defined in CSS', missing.length === 0, 'missing: ' + missing.join(' '));
     check('.is-hidden actually hides', /\.is-hidden\s*\{\s*display:\s*none/.test(css));

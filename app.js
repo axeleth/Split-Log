@@ -486,7 +486,10 @@ function renderToday(){
               <div class="bib-countdown">${countdownHtml}</div>
             </div>
             <div class="bib-type type-none">No session planned</div>
-            <div class="bib-detail">Head to the Plan tab to generate a training block, or log a run manually below.</div>
+            <div class="bib-detail">Head to the Plan tab to generate a training block, or log a run you did anyway.</div>
+            <div class="bib-actions">
+              <button class="primary small" id="btnOpenLog">Log run</button>
+            </div>
           </div>
         </div>
         ${statsHtml}
@@ -520,7 +523,8 @@ function renderToday(){
           <div class="bib-detail">${day.detail}${targetPaceHtml}${zoneHintHtml(day.type)} ${doneBadge}</div>
           ${loggedMetricsHtml}
           <div class="bib-actions">
-            ${day.status!=='done' ? `<button class="ghost small" id="btnSkip">Mark skipped</button>` : ''}
+            <button class="primary small" id="btnOpenLog">${day.status==='done' ? 'Edit run' : 'Log run'}</button>
+            ${day.status!=='done' ? `<button class="ghost small" id="btnSkip">Skip</button>` : ''}
           </div>
         </div>
       </div>
@@ -534,12 +538,21 @@ function renderToday(){
   attachQuickLog(t);
 }
 
+// Whether the quick-log card is expanded. Module-level rather than stored:
+// like the ledger's "Previous runs" section, it always starts collapsed on a
+// fresh load. It does have to survive a renderToday() repaint though —
+// otherwise saving a run would slam the panel shut mid-edit.
+let quickLogOpen = false;
+
 function renderQuickLog(date, day){
   const actual = day && day.actual ? day.actual : {};
   const paceDisplay = actual.pace!=null ? fmtPace(actual.pace)+'/km' : '—';
   return `
-    <div class="card">
-      <h3>Log this run</h3>
+    <div class="card${quickLogOpen ? '' : ' is-hidden'}" id="quickLogCard">
+      <div class="ql-head">
+        <h3>Log this run</h3>
+        <button class="ql-close" id="btnQlClose" aria-label="Close log form" title="Close">&times;</button>
+      </div>
       <div class="row3">
         <div class="field"><label for="qlDist">Distance (km)</label><input type="number" step="0.01" id="qlDist" value="${actual.distance||''}"></div>
         <div class="field"><label for="qlDur">Duration (min:sec)</label><input type="text" id="qlDur" value="${actual.duration!=null?fmtDuration(actual.duration):''}" placeholder="30:00"></div>
@@ -555,6 +568,19 @@ function renderQuickLog(date, day){
 function attachQuickLog(date){
   $('#qlDist')?.addEventListener('input', updateQlPaceDisplay);
   $('#qlDur')?.addEventListener('input', updateQlPaceDisplay);
+
+  // Open/close toggles the card directly rather than re-rendering Today —
+  // a full repaint here would discard anything already typed into the form.
+  $('#btnOpenLog')?.addEventListener('click', ()=>{
+    quickLogOpen = true;
+    $('#quickLogCard')?.classList.remove('is-hidden');
+    $('#qlDist')?.focus();
+  });
+  $('#btnQlClose')?.addEventListener('click', ()=>{
+    quickLogOpen = false;
+    $('#quickLogCard')?.classList.add('is-hidden');
+    $('#btnOpenLog')?.focus();
+  });
 
   $('#btnLog')?.addEventListener('click', async ()=>{
     const btn = $('#btnLog');
@@ -583,6 +609,10 @@ function attachQuickLog(date){
       if(btn) btn.disabled = false;
       return;
     }
+
+    // Saved, so collapse the form — the run's metrics now show on the bib
+    // itself. Set before the repaint so renderToday() draws it closed.
+    quickLogOpen = false;
 
     // Saved. Nothing below can change that, so nothing below may report failure.
     safeRender('today', renderToday);
