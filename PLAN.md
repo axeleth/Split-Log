@@ -1,8 +1,9 @@
 # Split Log — Change Plan
 
 Running list of planned changes to the dashboard. Each item has a scope,
-an approach, the files it touches, and its open questions. Nothing here is
-built yet — this is the spec, not a changelog.
+an approach, the files it touches, and its open questions. This is the spec,
+not a changelog — items carry a status note once something ships, but the
+detail below describes the intent rather than what the code currently does.
 
 **Read `CLAUDE.md` first.** The gotchas listed there (timezone dates, no
 `confirm()`, no `localStorage`, derived pace) constrain everything below.
@@ -25,6 +26,20 @@ Worth recording, because `CLAUDE.md` still describes the single-file layout:
 ---
 
 # 1. Automated calendar syncing
+
+> **Status: Tier A1 built.** A plan's detail header has an "Export to
+> calendar" button that downloads an `.ics` of that plan — all-day events,
+> rest days excluded, stable UIDs. Covered by `test/calendar-export.js`.
+>
+> **A2 (subscribable feed) was deliberately not built**, which closes open
+> questions 2 and 3: the deployed site sits behind a Caddy cookie gate that
+> 401s anything without the login cookie, and a calendar client polling a
+> feed sends no cookies — so a feed would mean publishing training data at an
+> unauthenticated public URL. Q4 answered: rest days excluded. Q5: no `rev`
+> field was added; `SEQUENCE:0` is emitted and stable UIDs carry re-imports.
+> Q6: downloads work when self-hosted, and a copy-to-clipboard fallback
+> covers hosts that block them. A3 was narrowed to a per-plan button rather
+> than a Settings card.
 
 ## Goal
 
@@ -159,7 +174,183 @@ and a Google verification review — to what is currently a static page.
 
 ---
 
-# 2. UI overhaul
+# 2. Plan generation does not scale — and does not know the runner
+
+## Goal
+
+Two problems, one root cause. The generator emits a **fixed session pattern**
+that neither stretches sensibly to longer blocks nor reflects anything about
+the runner it is planning for. It should produce a structurally sound plan for
+any distance and any timeframe, and it should get better at that the more the
+runner logs.
+
+Nothing here is built. This is the spec.
+
+## 2.1 The immediate bug: resampling duplicates sessions
+
+`generate5kPlan()` holds an 18-step `prep` array and resamples it across
+however many days lie between start and race (`app.js` §5):
+
+```js
+const srcIdx = Math.min(prep.length-1, Math.floor(i*prep.length/totalPrepDays));
+```
+
+That is **nearest-neighbour resampling**. It works when the block is about 18
+days. Longer than that and every step repeats, because each source entry gets
+stretched over `totalPrepDays / 18` consecutive days.
+
+Simulating the current code, counting the longest unbroken run of each type:
+
+| Block length | Longest hard streak | Longest zone 2 streak | Rest days |
+| --- | --- | --- | --- |
+| 18 days (designed for) | 1 | 2 | 5 (28%) |
+| 20 days | 1 | 3 | 5 (25%) |
+| **45 days** (e.g. 15 Aug → 29 Sept) | **3** | **5** | 14 (31%) |
+
+The 45-day block expands to:
+
+```
+z2 z2 z2 z2 z2 rest rest rest HARD HARD z2 z2 z2 z2 z2 rest rest rest z2 z2
+HARD HARD HARD z2 z2 rest rest rest HARD HARD z2 z2 z2 rest rest z2 z2 z2
+HARD HARD rest rest rest z2 z2
+```
+
+Three interval days back to back, five consecutive zone 2 runs, and three-day
+rest blocks. Physiologically wrong: consecutive hard days give no recovery
+window, and long unbroken easy stretches waste training weeks.
+
+The subtle part, and the reason this was not obvious: the **proportions stay
+correct** (~31% rest either way). Only the *sequencing* degrades. Any fix has
+to be judged on ordering and spacing, not on session-type ratios — a test
+asserting "25-30% rest days" would pass on the broken output above.
+
+`generate10kPlan()` has the opposite failure: it is hardcoded to
+7 + 5×7 + 2×7 + 7 = **63 days**, ignoring `startDate`'s relationship to any
+race date entirely. It cannot be asked for a 10K in 4 months, or in 3 weeks.
+
+### Direction (not yet decided)
+
+Stop resampling a fixed list. Build the plan from **rules** instead:
+
+- Lay down a weekly microcycle (one quality session, one long run, easy days,
+  rest) and repeat it, rather than stretching a day-by-day array.
+- Enforce **invariants**: never two hard days consecutively; at least one rest
+  or easy day after every quality session; a long run once per week.
+- Scale by adjusting *what fills* the weeks — mesocycle progression, volume
+  ramp, intensity mix — not by duplicating days.
+- Add a **taper** proportional to block length, and a base/build phase before
+  it when there is room.
+- Cap weekly volume growth (the ~10%/week rule the 10K generator already uses
+  via `longRun*1.10`).
+
+Whatever replaces it, the invariants above are the testable contract, and they
+are what the current implementation violates.
+
+## 2.2 Goal ambition should scale with available time
+
+A race four months out and a race in three weeks are different problems, and
+the app currently treats them the same — the target pace comes from a single
+`SETTINGS.racePace` regardless of when the race is.
+
+The relationship the app should encode: **a more ambitious goal requires more
+weeks**. Concretely:
+
+- Ask for the goal at plan creation (goal time / goal pace) rather than reading
+  one global setting, so different plans can have different ambitions.
+- Sanity-check goal against timeframe using current fitness, and say so plainly
+  when the ask is unrealistic — "that is a 45s/km improvement in 3 weeks;
+  typical is 10-15s/km" — rather than silently generating a plan that cannot
+  work.
+- Let the runner choose: keep the goal and extend the block, or keep the date
+  and moderate the goal.
+- Derive session paces from the goal (interval pace, tempo pace, easy pace are
+  all functions of current and target fitness), not from a single stored number.
+
+## 2.3 Know the runner
+
+The data to personalise plans is largely **already being collected** — it is
+just not being read back. Every logged day stores `distance`, `duration`,
+derived `pace`, `avgHr` and `notes`; `SETTINGS` holds zone ranges and a
+`vo2Log`. Nothing in `generate5kPlan()` / `generate10kPlan()` consults any of it
+beyond three static pace targets.
+
+What a plan should be able to use:
+
+- **Current fitness** from recent logged runs — actual easy pace, actual
+  threshold pace, not the aspirational numbers typed into Settings once.
+- **Aerobic drift / pace at HR** — the app already charts zone 2 pace at a
+  given HR over time. Improvement there is the clearest signal that training is
+  working, and it should feed the next block's targets.
+- **Adherence** — how many planned sessions were actually completed. A plan
+  finished 60% of the time is too aggressive and the next one should be easier,
+  not identical.
+- **Volume history** — do not jump someone from 20km/week to 45km/week because
+  the template says so.
+
+The intent: after a handful of logged runs the app understands this runner well
+enough to plan for *them*, and a plan generated in month three should look
+materially different from one generated on day one.
+
+## 2.4 Perceived effort — the missing input
+
+Pace and heart rate do not capture how hard a session actually felt. The same
+6:30/km at 150bpm is an easy day when fresh and a grind at the end of a heavy
+week, and only the runner knows which.
+
+- Add a **manual effort rating** on each logged run — RPE 1-10 is the standard,
+  or a coarser 3-5 point scale if that is less friction.
+- Per `CLAUDE.md`, this goes **on the day object** inside `days{}` alongside the
+  rest of `actual`, never in a parallel structure — `findDayEntry()` stays the
+  single lookup path.
+- Optional, and absent on every existing logged run, so everything reading it
+  must tolerate `null`. Do not backfill a guessed value.
+- What it unlocks: effort trending up while pace stays flat is the classic
+  overreaching signal, and it is the input that lets the app tell "this plan is
+  too hard" from "this plan is working".
+
+## Files touched
+
+| File | Change |
+| --- | --- |
+| `app.js` | §5 rewritten: rule-based generation, fitness inputs, invariants |
+| `app.js` | Day editor + quick-log gain an effort field; `actual` gains `rpe` |
+| `index.html` | Goal/ambition inputs at plan creation; effort input |
+| `CLAUDE.md` | Document the new day field and the generation invariants |
+| `test/` | New suite asserting the invariants (see below) |
+
+## Open questions
+
+1. **Rewrite or evolve?** A rule-based generator is a rewrite of §5, not a
+   patch. Worth confirming before starting, since the current generators are
+   pure functions with no callers to migrate — the blast radius is small.
+2. **How much personalisation before it is creepy or wrong?** A plan that
+   silently changes because of one bad run would be worse than a static one.
+   Where is the line between adaptive and unpredictable?
+3. **Effort scale**: RPE 1-10, or something coarser? More granularity is only
+   useful if it is used consistently.
+4. **Does an existing plan adapt mid-block**, or is adaptation only applied when
+   the next plan is generated? Rewriting days underneath someone is a different
+   product than planning well up front.
+5. **Minimum data before personalising.** With two logged runs the app knows
+   almost nothing; asserting otherwise would produce worse plans than the
+   template. What is the threshold, and what does it do below it?
+
+## Testing note
+
+The bug in 2.1 is a **sequencing** bug that proportion-based assertions miss
+entirely (see the table above — rest-day share barely moves). Any test has to
+assert on ordering:
+
+- no two `hard` days adjacent, at any block length
+- no more than N consecutive days of the same type
+- a rest or easy day follows every quality session
+- generate across a **range** of block lengths (14, 21, 45, 90 days) rather
+  than one — the current bug only appears past ~18 days, which is exactly why
+  it shipped.
+
+---
+
+# 3. UI overhaul
 
 ## Goal
 
@@ -174,7 +365,7 @@ stay.
 sub-items below are ordered so each is independently shippable; agree which
 are in scope before starting rather than treating the list as one unit.
 
-### 2.1 Design-token pass (foundation — do this first)
+### 3.1 Design-token pass (foundation — do this first)
 
 `styles.css` already has a good token block, but values are hardcoded
 throughout the rest of the file (spacing, radii, font sizes).
@@ -189,7 +380,7 @@ throughout the rest of the file (spacing, radii, font sizes).
   `getComputedStyle(document.documentElement).getPropertyValue('--z2')` at
   chart-render time and delete the duplication — worth considering.
 
-### 2.2 Today / bib hero
+### 3.2 Today / bib hero
 
 The strongest piece of the design. Sharpen rather than rebuild.
 
@@ -202,7 +393,7 @@ The strongest piece of the design. Sharpen rather than rebuild.
 - Logged-state treatment: a completed session should read as visually
   "stamped", reinforcing the race-bib metaphor.
 
-### 2.3 Plan ledger density and rhythm
+### 3.3 Plan ledger density and rhythm
 
 - Week grouping is currently a flat run of rows; `isoWeekLabel()` already
   exists, so sticky week headers are cheap.
@@ -210,7 +401,7 @@ The strongest piece of the design. Sharpen rather than rebuild.
   adding new colours outside the token set.
 - Make the today row unmistakable in the ledger.
 
-### 2.4 Charts
+### 3.4 Charts
 
 - Consult the `dataviz` skill before touching chart code — it covers palette,
   axis and tooltip conventions.
@@ -219,7 +410,7 @@ The strongest piece of the design. Sharpen rather than rebuild.
   which the pace chart does but the others don't follow as a pattern.
 - Keep the `typeof Chart === 'undefined'` guard (gotcha #4).
 
-### 2.5 Motion and feedback
+### 3.5 Motion and feedback
 
 - Transitions on tab switches and panel toggles. Note the Plan tab's panels
   are `display:none/block` toggles, which **cannot be CSS-transitioned** —
@@ -227,7 +418,7 @@ The strongest piece of the design. Sharpen rather than rebuild.
 - Toast is functional but plain; align it with the theme.
 - Respect `prefers-reduced-motion` on everything added here.
 
-### 2.6 Responsive and accessibility
+### 3.6 Responsive and accessibility
 
 - Verify the layout below 400px — the `.row3` grids are the likely breakage.
 - Focus-visible styles on all interactive elements; the current dark theme
