@@ -115,14 +115,17 @@ body{font-family:var(--font-body);-webkit-font-smoothing:antialiased;
    3. Layout — masthead, tabs, views
    -------------------------------------------------------------------------- */
 /* Header and nav sit on one line, as in the reference dashboard. */
-/* The nav pills live in here, so this bottom margin is the gap between the
-   tabs and the dashboard below them. */
-.masthead{display:flex;align-items:center;justify-content:space-between;gap:var(--sp-4);flex-wrap:wrap;margin-bottom:var(--sp-6);}
+/* .tabs is a SIBLING of this, not a child — so this margin is the gap above
+   the nav pills. The gap below them is .tabs' own margin-bottom. */
+.masthead{display:flex;align-items:center;justify-content:space-between;gap:var(--sp-4);flex-wrap:wrap;margin-bottom:var(--sp-5);}
 .masthead h1{font-family:var(--font-display);font-size:var(--fs-9);letter-spacing:1.5px;margin:0;line-height:1;}
 .masthead .sub{font-family:var(--font-mono);font-size:var(--fs-2);color:var(--text-muted);letter-spacing:1px;text-transform:uppercase;margin-top:var(--sp-1);}
 
 /* Pill nav: a recessed track holding one raised white pill. */
-.tabs{display:inline-flex;gap:var(--sp-1);background:var(--surface-2);border:1px solid var(--border);border-radius:var(--r-pill);padding:var(--sp-1);}
+/* margin-bottom is the gap between the pills and the dashboard below. The
+   pill track is a floating element rather than a full-width bar, so it needs
+   clear air under it or the hero card reads as attached to it. */
+.tabs{display:inline-flex;gap:var(--sp-1);background:var(--surface-2);border:1px solid var(--border);border-radius:var(--r-pill);padding:var(--sp-1);margin-bottom:var(--sp-6);}
 .tab{font-family:var(--font-mono);font-size:var(--fs-3);letter-spacing:0.5px;text-transform:uppercase;color:var(--text-muted);background:none;border:none;border-radius:var(--r-pill);padding:var(--sp-2) var(--sp-4);cursor:pointer;transition:color .15s,background .15s;}
 .tab:hover{color:var(--text);}
 .tab.active{color:var(--text);background:var(--surface);box-shadow:var(--shadow-sm);}
@@ -367,9 +370,8 @@ canvas{max-width:100%;}
 }
 @media(max-width:640px){
   .dash-aside{grid-template-columns:repeat(2,minmax(0,1fr));}
-  /* The masthead wraps here, dropping the pills onto their own line. */
-  .masthead{align-items:flex-start;gap:var(--sp-3);}
-  .tabs{width:100%;overflow-x:auto;scrollbar-width:none;}
+  .masthead{align-items:flex-start;}
+  .tabs{width:100%;overflow-x:auto;scrollbar-width:none;margin-bottom:var(--sp-5);}
 }
 @media(max-width:520px){
   .row,.row3{grid-template-columns:1fr;}
